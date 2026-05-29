@@ -1,0 +1,29 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "com.homepanel.clock"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.homepanel.clock"
+        minSdk 23
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+}
+
+def generatedClockAssets = file("$buildDir/generated/assets/clock")
+
+tasks.register("syncClockHtml", Copy) {
+    from(rootProject.file("clock.html"))
+    into(generatedClockAssets)
+}
+
+android.sourceSets.main.assets.srcDir(generatedClockAssets)
+
+tasks.named("preBuild") {
+    dependsOn("syncClockHtml")
+}

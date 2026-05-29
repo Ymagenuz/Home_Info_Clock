@@ -948,6 +948,94 @@
     const weatherReturnDelay = 30 * 1000;
     const pageCount = 3;
 
+    function getConfiguredLocation() {
+      const params = new URLSearchParams(location.search);
+      if (!params.has("lat") || (!params.has("lon") && !params.has("lng"))) return null;
+
+      const latitude = Number(params.get("lat"));
+      const longitude = Number(params.get("lon") || params.get("lng"));
+
+      if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+        return {
+          latitude,
+          longitude,
+          label: params.get("location") || "",
+          source: "fixed"
+        };
+      }
+
+      return null;
+    }
+
+    function normalizeLocation(raw, source) {
+      if (!raw) return null;
+
+      const latitude = Number(raw.latitude ?? raw.lat);
+      const longitude = Number(raw.longitude ?? raw.lon ?? raw.lng);
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+
+      const label = raw.city || raw.locality || raw.town || raw.village || raw.region || "";
+      return { latitude, longitude, label, source };
+    }
+
+    function getFullyKioskLocation() {
+      try {
+        if (!window.fully || typeof window.fully.getLocation !== "function") return null;
+
+        const raw = JSON.parse(window.fully.getLocation());
+        return normalizeLocation(raw, "fully");
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function getNativeAppLocation() {
+      try {
+        if (!window.HomePanelNative || typeof window.HomePanelNative.getLocation !== "function") return null;
+
+        const raw = JSON.parse(window.HomePanelNative.getLocation());
+        if (!raw.ok) return null;
+        return normalizeLocation(raw, "android");
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function getBrowserLocation() {
+      return new Promise((resolve) => {
+        if (!navigator.geolocation) {
+          resolve(null);
+          return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+          ({ coords }) => resolve(normalizeLocation(coords, "browser")),
+          () => resolve(null),
+          { enableHighAccuracy: true, timeout: 9000, maximumAge: 30 * 60 * 1000 }
+        );
+      });
+    }
+
+    async function getLocationLabel(weatherLocation) {
+      if (weatherLocation.label) return weatherLocation.label;
+
+      try {
+        const params = new URLSearchParams({
+          latitude: weatherLocation.latitude.toFixed(6),
+          longitude: weatherLocation.longitude.toFixed(6),
+          localityLanguage: "zh"
+        });
+        const response = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?${params}`);
+        if (!response.ok) throw new Error("reverse geocode failed");
+
+        const data = await response.json();
+        return data.city || data.locality || data.principalSubdivision || data.countryName || `位置 ${weatherLocation.latitude.toFixed(4)}, ${weatherLocation.longitude.toFixed(4)}`;
+      } catch (_) {
+        return `位置 ${weatherLocation.latitude.toFixed(4)}, ${weatherLocation.longitude.toFixed(4)}`;
+      }
+    }
+
     function pad(n) {
       return String(n).padStart(2, "0");
     }
@@ -1096,23 +1184,31 @@
       renderWeather(await response.json(), sourceLabel);
     }
 
-    function updateWeather() {
-      const fallback = () => fetchWeather("1.3521", "103.8198", "新加坡天气").catch(() => {
-        el.weatherLocation.textContent = "天气暂不可用";
-        el.weatherText.textContent = "网络或定位受限";
-        el.weatherNote.textContent = "请检查网络、定位权限或固定坐标";
-      });
+    async function updateWeather() {
+      const configuredLocation = getConfiguredLocation();
+      const nativeLocation = configuredLocation ? null : getNativeAppLocation();
+      const fullyLocation = configuredLocation || nativeLocation ? null : getFullyKioskLocation();
+      const browserLocation = configuredLocation || nativeLocation || fullyLocation ? null : await getBrowserLocation();
+      const weatherLocation = configuredLocation || nativeLocation || fullyLocation || browserLocation;
 
-      if (!navigator.geolocation) {
-        fallback();
+      if (!weatherLocation) {
+        el.weatherLocation.textContent = "定位失败";
+        el.weatherText.textContent = "未获取坐标";
+        el.weatherNote.textContent = "请开启定位，或在 URL 加 ?lat=纬度&lon=经度";
         return;
       }
 
-      navigator.geolocation.getCurrentPosition(
-        ({ coords }) => fetchWeather(coords.latitude.toFixed(4), coords.longitude.toFixed(4), "当前位置天气").catch(fallback),
-        fallback,
-        { enableHighAccuracy: false, timeout: 7000, maximumAge: 30 * 60 * 1000 }
-      );
+      const locationLabel = await getLocationLabel(weatherLocation);
+
+      fetchWeather(
+        weatherLocation.latitude.toFixed(4),
+        weatherLocation.longitude.toFixed(4),
+        locationLabel
+      ).catch(() => {
+        el.weatherLocation.textContent = "天气暂不可用";
+        el.weatherText.textContent = "网络或天气接口受限";
+        el.weatherNote.textContent = "已获取位置，但天气请求失败";
+      });
     }
 
     function renderWeatherPager() {
@@ -1231,6 +1327,19 @@
 
     async function updateBattery() {
       try {
+        if (window.HomePanelNative && typeof window.HomePanelNative.getBattery === "function") {
+          const nativeBattery = JSON.parse(window.HomePanelNative.getBattery());
+          if (nativeBattery.ok) {
+            const pct = nativeBattery.level;
+            el.batteryLabel.textContent = `电量 ${pct}%`;
+            el.batteryState.textContent = nativeBattery.charging ? "充电中" : "使用电池";
+            el.batteryFill.style.setProperty("--battery-level", `${pct}%`);
+            el.batteryFill.closest(".battery-status").classList.toggle("is-charging", nativeBattery.charging);
+            el.batteryFill.closest(".battery-status").classList.toggle("is-low", !nativeBattery.charging && pct <= 20);
+            return;
+          }
+        }
+
         if (!navigator.getBattery) {
           el.batteryLabel.textContent = "电量不可用";
           el.batteryState.textContent = "设备未开放";
@@ -1272,6 +1381,7 @@
     requestWakeLock();
     setInterval(updateClock, 1000);
     setInterval(updateWeather, 15 * 60 * 1000);
+    setInterval(updateBattery, 60 * 1000);
   </script>
 </body>
 </html>
