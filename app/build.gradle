@@ -13,17 +13,9 @@ android {
         versionCode 1
         versionName "1.0"
     }
-}
 
-def generatedClockAssets = file("$buildDir/generated/assets/clock")
-
-tasks.register("syncClockHtml", Copy) {
-    from(rootProject.file("clock.html"))
-    into(generatedClockAssets)
-}
-
-android.sourceSets.main.assets.srcDir(generatedClockAssets)
-
-tasks.named("preBuild") {
-    dependsOn("syncClockHtml")
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
 }
