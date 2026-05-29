@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#05070a" />
+  <title>横屏全屏时钟 · Fully Kiosk Browser</title>
+  <style>
+    :root {
+      --bg-1: #05070a;
+      --bg-2: #101827;
+      --text: #f7fbff;
+      --muted: #a7b4c7;
+      --accent: #77d8ff;
+      --warn: #ffd166;
+      --glass: rgba(255,255,255,.06);
+      --shadow: 0 24px 80px rgba(0,0,0,.35);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg-1);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      -webkit-user-select: none;
+      user-select: none;
+      touch-action: manipulation;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 20% 10%, rgba(119, 216, 255, .16), transparent 32%),
+        radial-gradient(circle at 80% 90%, rgba(130, 110, 255, .18), transparent 34%),
+        linear-gradient(135deg, var(--bg-1), var(--bg-2));
+    }
+
+    .noise {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .12;
+      background-image:
+        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+      background-size: 44px 44px;
+      mask-image: radial-gradient(circle at center, black, transparent 82%);
+    }
+
+    .clock-wrap {
+      width: min(96vw, 1320px);
+      height: min(88vh, 620px);
+      padding: clamp(18px, 3vw, 42px);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: clamp(14px, 2.2vw, 28px);
+      border: 1px solid rgba(255,255,255,.09);
+      border-radius: clamp(24px, 4vw, 52px);
+      background: linear-gradient(145deg, rgba(255,255,255,.09), rgba(255,255,255,.025));
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      transform: translate3d(var(--drift-x, 0px), var(--drift-y, 0px), 0);
+      transition: transform 1.2s ease, opacity .4s ease;
+    }
+
+    .top-bar,
+    .bottom-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      color: var(--muted);
+      font-size: clamp(16px, 2.3vw, 28px);
+      letter-spacing: .04em;
+      white-space: nowrap;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: .5em;
+      padding: .42em .72em;
+      border-radius: 999px;
+      background: var(--glass);
+      border: 1px solid rgba(255,255,255,.08);
+    }
+
+    .dot {
+      width: .55em;
+      height: .55em;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 0 18px var(--accent);
+    }
+
+    .main-time {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 0;
+      font-variant-numeric: tabular-nums;
+      font-weight: 800;
+      letter-spacing: -.055em;
+      line-height: .9;
+      text-shadow: 0 0 34px rgba(119,216,255,.22);
+    }
+
+    #time {
+      font-size: clamp(92px, 22vw, 310px);
+    }
+
+    #seconds {
+      align-self: flex-end;
+      margin: 0 0 .16em .08em;
+      color: var(--accent);
+      font-size: clamp(36px, 7vw, 96px);
+      letter-spacing: -.02em;
+      opacity: .96;
+    }
+
+    .date {
+      color: var(--text);
+      font-size: clamp(20px, 3.3vw, 46px);
+      font-weight: 650;
+      letter-spacing: .04em;
+    }
+
+    .hint {
+      opacity: .74;
+      font-size: clamp(13px, 1.5vw, 18px);
+    }
+
+    .portrait-warning {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9;
+      padding: 32px;
+      place-items: center;
+      text-align: center;
+      background: #05070a;
+      color: var(--text);
+      font-size: 22px;
+      line-height: 1.55;
+    }
+
+    .portrait-warning strong {
+      display: block;
+      margin-bottom: 12px;
+      color: var(--accent);
+      font-size: 30px;
+    }
+
+    .dim .clock-wrap { opacity: .35; }
+    .dim body { background: #000; }
+
+    @media (orientation: portrait) {
+      .portrait-warning { display: grid; }
+      .clock-wrap, .noise { display: none; }
+    }
+
+    @media (max-aspect-ratio: 1/1) {
+      .portrait-warning { display: grid; }
+      .clock-wrap, .noise { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .clock-wrap { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="portrait-warning">
+    <div>
+      <strong>请横屏使用</strong>
+      这个时钟专为 Fully Kiosk Browser 横屏全屏显示设计。<br />
+      请开启自动旋转，或在 Fully Kiosk 中锁定 Landscape。
+    </div>
+  </div>
+
+  <div class="noise" aria-hidden="true"></div>
+
+  <main class="clock-wrap" aria-label="横屏时钟">
+    <section class="top-bar">
+      <div class="status-pill"><span class="dot"></span><span id="greeting">晚上好</span></div>
+      <div id="weekday">星期四</div>
+    </section>
+
+    <section class="main-time" aria-live="polite">
+      <span id="time">00:00</span><span id="seconds">00</span>
+    </section>
+
+    <section class="bottom-bar">
+      <div class="date" id="date">2026年5月28日</div>
+      <div class="hint" id="battery">点击切换常亮/夜间暗显</div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    const el = {
+      time: $("time"),
+      seconds: $("seconds"),
+      date: $("date"),
+      weekday: $("weekday"),
+      greeting: $("greeting"),
+      battery: $("battery")
+    };
+
+    const weekdays = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+
+    let dimmed = false;
+    let lastMinute = "";
+
+    function pad(n) {
+      return String(n).padStart(2, "0");
+    }
+
+    function getGreeting(hour) {
+      if (hour >= 5 && hour < 11) return "早上好";
+      if (hour >= 11 && hour < 14) return "中午好";
+      if (hour >= 14 && hour < 18) return "下午好";
+      return "晚上好";
+    }
+
+    function updateClock() {
+      const now = new Date();
+      const hour = now.getHours();
+      const minute = now.getMinutes();
+      const second = now.getSeconds();
+      const minuteKey = `${hour}:${minute}`;
+
+      el.time.textContent = `${pad(hour)}:${pad(minute)}`;
+      el.seconds.textContent = pad(second);
+
+      if (minuteKey !== lastMinute) {
+        lastMinute = minuteKey;
+        el.date.textContent = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
+        el.weekday.textContent = weekdays[now.getDay()];
+        el.greeting.textContent = getGreeting(hour);
+        driftForBurnInProtection();
+      }
+    }
+
+    // 每分钟轻微移动几像素，降低 OLED 长时间显示时的烧屏风险。
+    function driftForBurnInProtection() {
+      const x = Math.round((Math.random() - .5) * 16);
+      const y = Math.round((Math.random() - .5) * 10);
+      document.documentElement.style.setProperty("--drift-x", `${x}px`);
+      document.documentElement.style.setProperty("--drift-y", `${y}px`);
+    }
+
+    async function updateBattery() {
+      try {
+        if (!navigator.getBattery) return;
+        const battery = await navigator.getBattery();
+        const render = () => {
+          const pct = Math.round(battery.level * 100);
+          const charging = battery.charging ? "充电中" : "电池";
+          el.battery.textContent = `${charging} ${pct}% · 点击切换暗显`;
+          if (!battery.charging && pct <= 20) {
+            el.battery.style.color = "var(--warn)";
+          } else {
+            el.battery.style.color = "";
+          }
+        };
+        battery.addEventListener("levelchange", render);
+        battery.addEventListener("chargingchange", render);
+        render();
+      } catch (_) {
+        // 某些 WebView 不开放电池接口，忽略即可。
+      }
+    }
+
+    function toggleDim() {
+      dimmed = !dimmed;
+      document.documentElement.classList.toggle("dim", dimmed);
+    }
+
+    document.addEventListener("click", toggleDim);
+    document.addEventListener("dblclick", () => location.reload());
+
+    // 尝试保持屏幕常亮。Fully Kiosk 一般也可在设置中强制 Keep Screen On。
+    async function requestWakeLock() {
+      try {
+        if ("wakeLock" in navigator) {
+          await navigator.wakeLock.request("screen");
+        }
+      } catch (_) {}
+    }
+
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) requestWakeLock();
+    });
+
+    updateClock();
+    updateBattery();
+    requestWakeLock();
+    setInterval(updateClock, 250);
+  </script>
+</body>
+</html>
