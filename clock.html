@@ -15,6 +15,8 @@
       --muted: #a8b8b3;
       --accent: #6bd6c6;
       --accent-2: #f2c86d;
+      --battery: #7cc7ff;
+      --battery-charge: #8ef0a4;
       --danger: #ff8f7e;
       --shadow: 0 28px 90px rgba(0, 0, 0, .38);
     }
@@ -50,7 +52,7 @@
       padding: clamp(10px, 2vw, 34px);
       display: grid;
       grid-template-columns: minmax(190px, .82fr) minmax(260px, 1.28fr) minmax(200px, .9fr);
-      gap: clamp(10px, 1.4vw, 26px);
+      gap: 0;
       transform: translate3d(var(--drift-x, 0px), var(--drift-y, 0px), 0);
       transition: transform 1.2s ease, opacity .35s ease;
     }
@@ -59,11 +61,14 @@
       min-width: 0;
       min-height: 0;
       height: 100%;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: linear-gradient(150deg, rgba(255, 255, 255, .105), rgba(255, 255, 255, .045));
-      box-shadow: var(--shadow);
+      border: 0;
+      border-radius: 0;
+      background: linear-gradient(150deg, rgba(255, 255, 255, .075), rgba(255, 255, 255, .025));
       backdrop-filter: blur(16px);
+    }
+
+    .panel + .panel {
+      border-left: 1px solid rgba(255, 255, 255, .13);
     }
 
     .weather {
@@ -153,8 +158,17 @@
       width: var(--battery-level, 0%);
       height: 100%;
       border-radius: inherit;
-      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      background: linear-gradient(90deg, var(--battery), #c8e7ff);
       transition: width .35s ease;
+    }
+
+    .battery-status.is-charging .battery-fill {
+      background: linear-gradient(90deg, var(--battery-charge), #f1ff97);
+      box-shadow: 0 0 12px rgba(142, 240, 164, .34);
+    }
+
+    .battery-status.is-low .battery-fill {
+      background: linear-gradient(90deg, var(--danger), #ffd166);
     }
 
     .weather-slider {
@@ -291,8 +305,9 @@
 
     .trend-row {
       display: grid;
-      grid-template-columns: 3.2em 1.5em minmax(0, 1fr) 3.4em 3em;
-      gap: 7px;
+      grid-template-columns: 2.7em 1.3em minmax(0, 1fr);
+      grid-template-rows: auto auto;
+      gap: 2px 5px;
       align-items: center;
       color: var(--muted);
       font-size: clamp(12px, 1.25vw, 16px);
@@ -303,15 +318,43 @@
       font-size: clamp(11px, 1.15vw, 15px);
     }
 
-    .trend-bar {
+    .trend-track {
       height: 7px;
       border-radius: 999px;
+      background: rgba(255, 255, 255, .16);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .trend-bar {
+      position: absolute;
+      left: var(--range-left, 0%);
+      width: var(--range-width, 30%);
+      height: 100%;
+      border-radius: inherit;
       background: linear-gradient(90deg, var(--accent), var(--accent-2));
-      opacity: .86;
+      opacity: .92;
     }
 
     .trend-rain {
+      grid-column: 3;
       color: var(--accent);
+      font-size: .92em;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    .trend-range {
+      display: grid;
+      grid-template-columns: 2.5em minmax(38px, 1fr) 2.5em;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .trend-low,
+    .trend-high {
+      color: var(--text);
+      text-align: center;
       white-space: nowrap;
     }
 
@@ -558,7 +601,7 @@
     @media (max-width: 900px) and (orientation: landscape) {
       .screen {
         padding: 8px;
-        gap: 8px;
+        gap: 0;
         grid-template-columns: minmax(190px, .84fr) minmax(260px, 1.32fr) minmax(210px, .96fr);
         transform: none;
       }
@@ -618,9 +661,14 @@
       }
 
       .trend-row {
-        gap: 5px;
+        gap: 4px;
         font-size: 11px;
-        grid-template-columns: 2.8em 1.2em minmax(0, 1fr) 3.1em 2.7em;
+        grid-template-columns: 2.5em 1.1em minmax(0, 1fr);
+      }
+
+      .trend-range {
+        grid-template-columns: 2.2em minmax(30px, 1fr) 2.2em;
+        gap: 4px;
       }
 
       .analog-clock {
@@ -1007,23 +1055,27 @@
       const minLow = Math.min(...lows);
       el.weeklyTrend.innerHTML = "";
 
-      daily.time.slice(0, 4).forEach((dateText, index) => {
+      daily.time.slice(0, 3).forEach((dateText, index) => {
         const date = new Date(`${dateText}T00:00:00`);
         const [condition, icon] = weatherCodeMap[daily.weather_code[index]] || ["未知", "·"];
         const high = highs[index];
         const low = lows[index];
         const rain = daily.precipitation_probability_max ? daily.precipitation_probability_max[index] : 0;
         const range = Math.max(1, maxHigh - minLow);
-        const width = Math.max(18, ((high - low) / range) * 100);
+        const left = ((low - minLow) / range) * 100;
+        const width = Math.max(14, ((high - low) / range) * 100);
         const row = document.createElement("div");
 
         row.className = "trend-row";
         row.innerHTML = `
           <span>${index === 0 ? "今天" : weekdays[date.getDay()].replace("星期", "周")}</span>
           <span>${icon}</span>
-          <span class="trend-bar" style="width:${width}%"></span>
-          <span>${high}°/${low}°</span>
-          <span class="trend-rain">💧${rain}%</span>
+          <span class="trend-range">
+            <span class="trend-low">${low}°</span>
+            <span class="trend-track"><span class="trend-bar" style="--range-left:${left}%; --range-width:${width}%"></span></span>
+            <span class="trend-high">${high}°</span>
+          </span>
+          <span class="trend-rain">💧 降水 ${rain}%</span>
         `;
         row.title = condition;
         el.weeklyTrend.appendChild(row);
@@ -1191,6 +1243,8 @@
           el.batteryLabel.textContent = `电量 ${pct}%`;
           el.batteryState.textContent = battery.charging ? "充电中" : "使用电池";
           el.batteryFill.style.setProperty("--battery-level", `${pct}%`);
+          el.batteryFill.closest(".battery-status").classList.toggle("is-charging", battery.charging);
+          el.batteryFill.closest(".battery-status").classList.toggle("is-low", !battery.charging && pct <= 20);
         };
 
         battery.addEventListener("levelchange", render);
