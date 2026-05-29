@@ -38,6 +38,9 @@ public class HomePanelView extends View {
     private int rightPage;
     private float touchDownX;
     private float touchDownY;
+    private boolean rightTouchActive;
+    private float rightPanelStartX;
+    private float rightPanelEndX;
 
     private final Runnable ticker = new Runnable() {
         @Override
@@ -131,6 +134,8 @@ public class HomePanelView extends View {
         float rightX = centerX + centerW;
         float top = outer;
         float bottom = height - outer;
+        rightPanelStartX = rightX;
+        rightPanelEndX = width - outer;
 
         drawSeparator(canvas, centerX, top, bottom);
         drawSeparator(canvas, rightX, top, bottom);
@@ -145,10 +150,13 @@ public class HomePanelView extends View {
         if (event.getAction() == MotionEvent.ACTION_DOWN) {
             touchDownX = event.getX();
             touchDownY = event.getY();
-            return true;
+            rightTouchActive = isInRightPanel(touchDownX);
+            return rightTouchActive;
         }
 
         if (event.getAction() == MotionEvent.ACTION_UP) {
+            if (!rightTouchActive || !isInRightPanel(touchDownX)) return false;
+            rightTouchActive = false;
             float dx = event.getX() - touchDownX;
             float dy = event.getY() - touchDownY;
             if (Math.abs(dx) > dp(36) && Math.abs(dx) > Math.abs(dy)) {
@@ -165,6 +173,24 @@ public class HomePanelView extends View {
         }
 
         return true;
+    }
+
+    private boolean isInRightPanel(float x) {
+        float width = getWidth();
+        float outer = dp(10);
+        float leftW = clamp(width * 0.27f, dp(210), width * 0.33f);
+        float rightW = clamp(width * 0.31f, dp(225), width * 0.34f);
+        float centerW = width - leftW - rightW - outer * 2f;
+
+        if (centerW < dp(270)) {
+            leftW = width * 0.28f;
+            rightW = width * 0.30f;
+            centerW = width - leftW - rightW - outer * 2f;
+        }
+
+        float rightStart = outer + leftW + centerW;
+        float rightEnd = width - outer;
+        return x >= rightStart && x <= rightEnd;
     }
 
     private void drawBackground(Canvas canvas) {
@@ -215,12 +241,15 @@ public class HomePanelView extends View {
             ? weather.locationLabel
             : locationLabel != null && !locationLabel.isEmpty() ? locationLabel
             : location != null ? "定位完成，更新天气中" : "当前位置天气";
-        drawText(canvas, title, x + pad, titleY, label, Color.argb(190, 224, 242, 235), Paint.Align.LEFT, true);
+        drawFittedText(canvas, title, x + pad, titleY, label, Color.argb(190, 224, 242, 235), Paint.Align.LEFT, true, w - pad * 2f);
 
         String updated = weather != null
             ? "更新 " + updateFormat.format(weather.updatedAtMillis) + " · 15分钟刷新"
             : locationPermissionMissing ? "需要定位权限" : weatherStatus;
-        drawText(canvas, updated, x + pad, titleY + dp(24), small, Color.argb(178, 224, 242, 235), Paint.Align.LEFT, true);
+        if (weather != null && weather.sourceLabel != null && !weather.sourceLabel.isEmpty()) {
+            updated = updated + " · " + weather.sourceLabel;
+        }
+        drawFittedText(canvas, updated, x + pad, titleY + dp(24), small, Color.argb(178, 224, 242, 235), Paint.Align.LEFT, true, w - pad * 2f);
 
         if (weather == null) {
             drawEmptyWeather(canvas, x, y, w, h);
@@ -230,24 +259,37 @@ public class HomePanelView extends View {
 
         String icon = weatherIcon(weather.currentCode);
         drawCircleBadge(canvas, x + pad + dp(25), y + dp(92), dp(28), icon, dp(24));
-
-        drawText(canvas, weather.currentTemp + "°", x + pad + dp(72), y + dp(98), scaleText(h, 48, 66), Color.rgb(238, 250, 246), Paint.Align.LEFT, true);
-        drawText(canvas, weather.currentDescription, x + pad + dp(72), y + dp(126), scaleText(h, 18, 25), Color.WHITE, Paint.Align.LEFT, true);
-        drawText(canvas, "湿度 " + weather.humidity + "%   风 " + weather.windKmh + " km/h",
-            x + pad + dp(72),
-            y + dp(150),
-            small,
-            Color.argb(185, 224, 242, 235),
-            Paint.Align.LEFT,
-            false
+        drawFittedText(canvas, weather.currentDescription,
+            x + pad + dp(25),
+            y + dp(142),
+            scaleText(h, 16, 22),
+            Color.WHITE,
+            Paint.Align.CENTER,
+            true,
+            dp(82)
         );
 
         WeatherDay today = weather.days.isEmpty() ? null : weather.days.get(0);
-        if (today != null) {
-            drawTodaySummary(canvas, x + pad, y + dp(166), w - pad * 2f, dp(54), today);
-        }
+        float textX = x + pad + dp(72);
+        float textW = x + w - pad - textX;
+        String highLow = today != null ? "最高 " + today.high + "°  最低 " + today.low + "°" : "最高 --°  最低 --°";
+        drawText(canvas, weather.currentTemp + "°", textX, y + dp(98), scaleText(h, 48, 66), Color.rgb(238, 250, 246), Paint.Align.LEFT, true);
+        drawFittedText(canvas, highLow, textX, y + dp(134), small, Color.argb(205, 238, 250, 246), Paint.Align.LEFT, true, textW);
+        drawFittedText(canvas, "湿度 " + weather.humidity + "% · 风力 " + weather.windKmh + " km/h",
+            textX,
+            y + dp(158),
+            small,
+            Color.argb(185, 224, 242, 235),
+            Paint.Align.LEFT,
+            false,
+            textW
+        );
 
-        drawTrend(canvas, x + pad, y + dp(232), w - pad * 2f, y + h - dp(72));
+        if (weather.days.size() > 1) {
+            drawTrend(canvas, x + pad, y + dp(186), w - pad * 2f, y + h - dp(95));
+        } else {
+            drawRealtimeStatus(canvas, x + pad, y + dp(214), w - pad * 2f);
+        }
         drawBattery(canvas, x + pad, y + h - dp(54), w - pad * 2f);
     }
 
@@ -260,32 +302,19 @@ public class HomePanelView extends View {
         drawText(canvas, text, cx, cy + dp(34), dp(18), Color.rgb(238, 250, 246), Paint.Align.CENTER, true);
     }
 
-    private void drawTodaySummary(Canvas canvas, float x, float y, float w, float h, WeatherDay today) {
-        rect.set(x, y, x + w, y + h);
-        paint.setShader(new LinearGradient(x, y, x + w, y + h, Color.argb(26, 255, 255, 255), Color.argb(10, 255, 255, 255), Shader.TileMode.CLAMP));
-        canvas.drawRoundRect(rect, dp(7), dp(7), paint);
-        paint.setShader(null);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(dp(1));
-        paint.setColor(Color.argb(34, 255, 255, 255));
-        canvas.drawRoundRect(rect, dp(7), dp(7), paint);
-        paint.setStyle(Paint.Style.FILL);
-
-        drawText(canvas, today.icon, x + dp(18), y + dp(33), dp(22), Color.rgb(255, 205, 94), Paint.Align.CENTER, false);
-        drawText(canvas, "今天", x + dp(40), y + dp(24), dp(17), Color.WHITE, Paint.Align.LEFT, true);
-        drawText(canvas, today.description + " · 降水" + today.precipitation + "%", x + dp(40), y + dp(43), dp(12), Color.argb(185, 224, 242, 235), Paint.Align.LEFT, false);
-        drawText(canvas, today.high + "°/" + today.low + "°", x + w - dp(8), y + dp(34), dp(21), Color.WHITE, Paint.Align.RIGHT, true);
-    }
-
     private void drawTrend(Canvas canvas, float x, float y, float w, float maxY) {
         if (weather == null || weather.days.isEmpty()) return;
 
-        int count = Math.min(3, weather.days.size());
-        float available = Math.max(dp(78), maxY - y);
-        float rowH = Math.min(dp(38), available / count);
+        int startIndex = weather.days.size() > 3 ? 1 : 0;
+        int count = Math.min(3, weather.days.size() - startIndex);
+        if (count <= 0) return;
+
+        float available = Math.max(1f, maxY - y);
+        float rowH = available / count;
         int minTemp = Integer.MAX_VALUE;
         int maxTemp = Integer.MIN_VALUE;
-        for (WeatherDay day : weather.days) {
+        for (int i = 0; i < count; i++) {
+            WeatherDay day = weather.days.get(startIndex + i);
             minTemp = Math.min(minTemp, day.low);
             maxTemp = Math.max(maxTemp, day.high);
         }
@@ -295,27 +324,41 @@ public class HomePanelView extends View {
         }
 
         Calendar calendar = Calendar.getInstance(Locale.CHINA);
+        calendar.add(Calendar.DAY_OF_YEAR, startIndex);
         for (int i = 0; i < count; i++) {
-            WeatherDay day = weather.days.get(i);
-            String label = i == 0 ? "今天" : new SimpleDateFormat("E", Locale.CHINA).format(calendar.getTime());
-            if (i == 0) label = "今天";
+            WeatherDay day = weather.days.get(startIndex + i);
+            String label = startIndex == 1 && i == 0 ? "明天" : new SimpleDateFormat("E", Locale.CHINA).format(calendar.getTime());
             float rowY = y + i * rowH;
+            float baseline = rowY + rowH * 0.62f;
+            float barY = rowY + rowH * 0.50f;
 
-            drawText(canvas, label, x, rowY + dp(13), dp(12), Color.argb(190, 224, 242, 235), Paint.Align.LEFT, false);
-            drawText(canvas, day.icon, x + dp(48), rowY + dp(13), dp(12), Color.argb(210, 224, 242, 235), Paint.Align.CENTER, false);
+            drawText(canvas, label, x, baseline, dp(12), Color.argb(190, 224, 242, 235), Paint.Align.LEFT, false);
+            drawText(canvas, day.icon, x + dp(44), baseline, dp(12), Color.argb(210, 224, 242, 235), Paint.Align.CENTER, false);
 
-            float barStart = x + w * 0.40f;
-            float barEnd = x + w * 0.79f;
-            float barY = rowY + dp(12);
+            float lowX = x + w * 0.40f;
+            float highX = x + w;
+            float barStart = x + w * 0.50f;
+            float barEnd = x + w * 0.82f;
             float lowPos = map(day.low, minTemp, maxTemp, barStart, barEnd);
             float highPos = map(day.high, minTemp, maxTemp, barStart, barEnd);
             drawTemperatureBar(canvas, barStart, barEnd, lowPos, highPos, barY);
 
-            drawText(canvas, day.low + "°/" + day.high + "°", x + w, rowY + dp(13), dp(11), Color.rgb(224, 242, 235), Paint.Align.RIGHT, true);
-            drawText(canvas, "💧 降水 " + day.precipitation + "%", (barStart + barEnd) * 0.5f, rowY + dp(29), dp(10), Color.rgb(98, 211, 245), Paint.Align.CENTER, true);
+            drawText(canvas, day.low + "°", lowX, baseline, dp(12), Color.rgb(224, 242, 235), Paint.Align.RIGHT, true);
+            drawText(canvas, day.high + "°", highX, baseline, dp(12), Color.rgb(224, 242, 235), Paint.Align.RIGHT, true);
 
             calendar.add(Calendar.DAY_OF_YEAR, 1);
         }
+    }
+
+    private void drawRealtimeStatus(Canvas canvas, float x, float y, float w) {
+        rect.set(x, y, x + w, y + dp(50));
+        paint.setColor(Color.argb(18, 255, 255, 255));
+        canvas.drawRoundRect(rect, dp(7), dp(7), paint);
+        drawText(canvas, "UAPI 实时天气", x + dp(12), y + dp(20), dp(13), Color.rgb(224, 242, 235), Paint.Align.LEFT, true);
+        String report = weather != null && weather.reportTimeLabel != null && !weather.reportTimeLabel.isEmpty()
+            ? "数据时间 " + weather.reportTimeLabel
+            : "趋势页暂以实时信息为准";
+        drawText(canvas, report, x + dp(12), y + dp(40), dp(12), Color.argb(178, 224, 242, 235), Paint.Align.LEFT, false);
     }
 
     private void drawTemperatureBar(Canvas canvas, float start, float end, float low, float high, float y) {
@@ -408,28 +451,18 @@ public class HomePanelView extends View {
 
     private void drawRightPanel(Canvas canvas, float x, float y, float w, float h) {
         float pad = dp(18);
-        drawText(canvas, "预留板块", x + pad, y + dp(23), dp(14), Color.argb(190, 224, 242, 235), Paint.Align.LEFT, true);
+        drawText(canvas, "明日天气", x + pad, y + dp(23), dp(14), Color.argb(190, 224, 242, 235), Paint.Align.LEFT, true);
+        drawPageDots(canvas, x + w - pad - dp(18), y + dp(21), dp(3.2f), dp(12));
 
         if (rightPage == 0) {
-            drawTomorrowCard(canvas, x + pad, y + dp(54), w - pad * 2f, h - dp(96));
+            drawTomorrowCard(canvas, x + pad, y + dp(42), w - pad * 2f, h - dp(128));
         } else {
-            drawReservedPage(canvas, x + pad, y + dp(66), w - pad * 2f, h - dp(114), rightPage + 1);
+            drawReservedPage(canvas, x + pad, y + dp(52), w - pad * 2f, h - dp(130), rightPage + 1);
         }
-
-        drawPageDots(canvas, x + w * 0.5f, y + h - dp(22));
     }
 
     private void drawTomorrowCard(Canvas canvas, float x, float y, float w, float h) {
         WeatherDay tomorrow = weather != null && weather.days.size() > 1 ? weather.days.get(1) : null;
-        rect.set(x, y, x + w, y + h);
-        paint.setShader(new LinearGradient(x, y, x + w, y + h, Color.argb(18, 255, 255, 255), Color.argb(8, 255, 255, 255), Shader.TileMode.CLAMP));
-        canvas.drawRoundRect(rect, dp(7), dp(7), paint);
-        paint.setShader(null);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(dp(1));
-        paint.setColor(Color.argb(34, 255, 255, 255));
-        canvas.drawRoundRect(rect, dp(7), dp(7), paint);
-        paint.setStyle(Paint.Style.FILL);
 
         if (tomorrow == null) {
             drawText(canvas, weatherStatus == null || weatherStatus.isEmpty() ? "等待天气数据" : weatherStatus,
@@ -449,18 +482,19 @@ public class HomePanelView extends View {
         drawText(canvas, tomorrow.description, x + dp(58), headY + dp(16), dp(12), Color.argb(180, 224, 242, 235), Paint.Align.LEFT, false);
         drawText(canvas, tomorrow.high + "°/" + tomorrow.low + "°", x + w - dp(12), headY + dp(2), dp(22), Color.WHITE, Paint.Align.RIGHT, true);
 
-        float gridY = y + dp(68);
+        float gridY = y + dp(62);
         float gap = dp(8);
         float cellW = (w - gap) / 2f;
-        drawMetricCell(canvas, x, gridY, cellW, dp(51), "降水", tomorrow.precipitation + "%");
-        drawMetricCell(canvas, x + cellW + gap, gridY, cellW, dp(51), "紫外线", tomorrow.uv + " " + uvLevel(tomorrow.uv));
-        drawMetricCell(canvas, x, gridY + dp(59), cellW, dp(51), "风速", tomorrow.windKmh + " km/h");
-        drawMetricCell(canvas, x + cellW + gap, gridY + dp(59), cellW, dp(51), "温差", Math.abs(tomorrow.high - tomorrow.low) + "°");
+        float cellH = dp(46);
+        drawMetricCell(canvas, x, gridY, cellW, cellH, "降水", tomorrow.precipitation + "%");
+        drawMetricCell(canvas, x + cellW + gap, gridY, cellW, cellH, "紫外线", tomorrow.uv + " " + uvLevel(tomorrow.uv));
+        drawMetricCell(canvas, x, gridY + dp(53), cellW, cellH, "风速", tomorrow.windKmh + " km/h");
+        drawMetricCell(canvas, x + cellW + gap, gridY + dp(53), cellW, cellH, "温差", Math.abs(tomorrow.high - tomorrow.low) + "°");
 
         List<String[]> tips = buildTips(tomorrow);
-        float tipY = gridY + dp(136);
+        float tipY = gridY + dp(122);
         for (int i = 0; i < tips.size(); i++) {
-            drawTip(canvas, x + dp(10), tipY + i * dp(33), w - dp(20), tips.get(i)[0], tips.get(i)[1]);
+            drawTip(canvas, x + dp(10), tipY + i * dp(27), w - dp(20), tips.get(i)[0], tips.get(i)[1]);
         }
     }
 
@@ -479,9 +513,9 @@ public class HomePanelView extends View {
 
     private void drawTip(Canvas canvas, float x, float y, float w, String icon, String text) {
         paint.setColor(Color.argb(36, 255, 205, 94));
-        canvas.drawCircle(x + dp(10), y + dp(8), dp(10), paint);
-        drawText(canvas, icon, x + dp(10), y + dp(13), dp(12), Color.rgb(255, 205, 94), Paint.Align.CENTER, true);
-        drawText(canvas, text, x + dp(26), y + dp(13), dp(12), Color.WHITE, Paint.Align.LEFT, true);
+        canvas.drawCircle(x + dp(10), y + dp(8), dp(9), paint);
+        drawText(canvas, icon, x + dp(10), y + dp(12), dp(11), Color.rgb(255, 205, 94), Paint.Align.CENTER, true);
+        drawFittedText(canvas, text, x + dp(26), y + dp(12), dp(11), Color.WHITE, Paint.Align.LEFT, true, w - dp(26));
     }
 
     private void drawReservedPage(Canvas canvas, float x, float y, float w, float h, int page) {
@@ -489,11 +523,10 @@ public class HomePanelView extends View {
         drawText(canvas, "后续可放日程、快捷 App 或家庭信息", x + w * 0.5f, y + h * 0.42f + dp(34), dp(13), Color.argb(175, 224, 242, 235), Paint.Align.CENTER, false);
     }
 
-    private void drawPageDots(Canvas canvas, float cx, float cy) {
-        float gap = dp(20);
+    private void drawPageDots(Canvas canvas, float cx, float cy, float radius, float gap) {
         for (int i = 0; i < 3; i++) {
             paint.setColor(i == rightPage ? Color.rgb(100, 220, 205) : Color.argb(95, 255, 255, 255));
-            canvas.drawCircle(cx + (i - 1) * gap, cy, i == rightPage ? dp(6) : dp(5), paint);
+            canvas.drawCircle(cx + (i - 1) * gap, cy, i == rightPage ? radius * 1.2f : radius, paint);
         }
     }
 
@@ -520,15 +553,63 @@ public class HomePanelView extends View {
         paint.setFakeBoldText(false);
     }
 
+    private void drawFittedText(Canvas canvas, String text, float x, float y, float size, int color, Paint.Align align, boolean bold, float maxWidth) {
+        String value = text == null ? "" : text;
+        paint.setShader(null);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(color);
+        paint.setTextAlign(align);
+        paint.setFakeBoldText(bold);
+
+        float textSize = size;
+        float minSize = dp(9);
+        paint.setTextSize(textSize);
+        while (textSize > minSize && paint.measureText(value) > maxWidth) {
+            textSize -= dp(0.5f);
+            paint.setTextSize(textSize);
+        }
+
+        if (paint.measureText(value) > maxWidth) {
+            value = ellipsize(value, maxWidth);
+        }
+
+        canvas.drawText(value, x, y, paint);
+        paint.setFakeBoldText(false);
+    }
+
+    private String ellipsize(String text, float maxWidth) {
+        if (text == null || text.isEmpty()) return "";
+        String value = text;
+        while (value.length() > 1 && paint.measureText(value + "...") > maxWidth) {
+            value = value.substring(0, value.length() - 1);
+        }
+        return value.length() < text.length() ? value + "..." : value;
+    }
+
     private List<String[]> buildTips(WeatherDay day) {
         ArrayList<String[]> tips = new ArrayList<>();
-        String clothing = day.low <= 12 ? "偏凉，建议加外套。" : day.low <= 20 ? "早晚偏凉，建议加一件薄外套。" : "温度舒适，轻薄衣物即可。";
-        String umbrella = day.precipitation >= 50 ? "降水概率较高，建议带伞。" : day.precipitation >= 20 ? "可能有雨，随身备伞更稳妥。" : "降水概率不高，可轻装出行。";
-        String travel = day.uv >= 8 ? "紫外线较强，注意防晒。" : day.windKmh >= 30 ? "风力偏大，出行留意阵风。" : "天气总体平稳，适合出行。";
+        String clothing = firstNonEmpty(day.clothingTip, fallbackClothingTip(day));
+        String umbrella = firstNonEmpty(day.umbrellaTip, day.precipitation >= 50 ? "降水概率较高，建议带伞。" : day.precipitation >= 20 ? "可能有雨，随身备伞更稳妥。" : "降水概率不高，可轻装出行。");
+        String travel = firstNonEmpty(day.travelTip, day.sportTip, day.sunProtectionTip, fallbackTravelTip(day));
         tips.add(new String[] { "衣", clothing });
         tips.add(new String[] { "伞", umbrella });
         tips.add(new String[] { "行", travel });
         return tips;
+    }
+
+    private String fallbackClothingTip(WeatherDay day) {
+        return day.low <= 12 ? "偏凉，建议加外套。" : day.low <= 20 ? "早晚偏凉，建议加一件薄外套。" : "温度舒适，轻薄衣物即可。";
+    }
+
+    private String fallbackTravelTip(WeatherDay day) {
+        return day.uv >= 8 ? "紫外线较强，注意防晒。" : day.windKmh >= 30 ? "风力偏大，出行留意阵风。" : "天气总体平稳，适合出行。";
+    }
+
+    private String firstNonEmpty(String... values) {
+        for (String value : values) {
+            if (value != null && !value.trim().isEmpty()) return value.trim();
+        }
+        return null;
     }
 
     private String uvLevel(int uv) {
@@ -579,6 +660,9 @@ public class HomePanelView extends View {
         public int windKmh;
         public int currentCode;
         public String currentDescription = "天气";
+        public String sourceLabel = "";
+        public String reportTimeLabel = "";
+        public boolean forecastAvailable = true;
         public List<WeatherDay> days = new ArrayList<>();
     }
 
@@ -592,5 +676,11 @@ public class HomePanelView extends View {
         public int precipitation;
         public int uv;
         public int windKmh;
+        public String windDirection;
+        public String clothingTip;
+        public String umbrellaTip;
+        public String sportTip;
+        public String travelTip;
+        public String sunProtectionTip;
     }
 }

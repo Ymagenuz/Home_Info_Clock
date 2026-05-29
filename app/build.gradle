@@ -2,6 +2,56 @@ plugins {
     id "com.android.application"
 }
 
+def localProps = new Properties()
+def localPropsFile = rootProject.file("local.properties")
+if (localPropsFile.exists()) {
+    localPropsFile.withInputStream { localProps.load(it) }
+}
+
+def buildConfigString = { value ->
+    def text = value == null ? "" : value.toString()
+    return "\"" + text
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\r", "")
+        .replace("\n", "\\n") + "\""
+}
+
+def qweatherApiKey = localProps.getProperty("QWEATHER_API_KEY")
+    ?: localProps.getProperty("qweather.apiKey")
+    ?: findProperty("QWEATHER_API_KEY")
+    ?: ""
+def qweatherApiHost = localProps.getProperty("QWEATHER_API_HOST")
+    ?: localProps.getProperty("qweather.apiHost")
+    ?: findProperty("QWEATHER_API_HOST")
+    ?: "devapi.qweather.com"
+def qweatherJwtProjectId = localProps.getProperty("QWEATHER_JWT_PROJECT_ID")
+    ?: localProps.getProperty("qweather.jwtProjectId")
+    ?: findProperty("QWEATHER_JWT_PROJECT_ID")
+    ?: ""
+def qweatherJwtKeyId = localProps.getProperty("QWEATHER_JWT_KEY_ID")
+    ?: localProps.getProperty("qweather.jwtKeyId")
+    ?: findProperty("QWEATHER_JWT_KEY_ID")
+    ?: ""
+def qweatherJwtPrivateKey = localProps.getProperty("QWEATHER_JWT_PRIVATE_KEY")
+    ?: localProps.getProperty("qweather.jwtPrivateKey")
+    ?: findProperty("QWEATHER_JWT_PRIVATE_KEY")
+    ?: ""
+def qweatherJwtPrivateKeyFile = localProps.getProperty("QWEATHER_JWT_PRIVATE_KEY_FILE")
+    ?: localProps.getProperty("qweather.jwtPrivateKeyFile")
+    ?: findProperty("QWEATHER_JWT_PRIVATE_KEY_FILE")
+    ?: ""
+
+if (qweatherJwtPrivateKeyFile) {
+    def keyFile = file(qweatherJwtPrivateKeyFile)
+    if (!keyFile.isAbsolute()) {
+        keyFile = rootProject.file(qweatherJwtPrivateKeyFile)
+    }
+    if (keyFile.exists()) {
+        qweatherJwtPrivateKey = keyFile.getText("UTF-8")
+    }
+}
+
 android {
     namespace "com.homepanel.clock"
     compileSdk 34
@@ -12,6 +62,16 @@ android {
         targetSdk 34
         versionCode 1
         versionName "1.0"
+
+        buildConfigField "String", "QWEATHER_API_KEY", buildConfigString(qweatherApiKey)
+        buildConfigField "String", "QWEATHER_API_HOST", buildConfigString(qweatherApiHost)
+        buildConfigField "String", "QWEATHER_JWT_PROJECT_ID", buildConfigString(qweatherJwtProjectId)
+        buildConfigField "String", "QWEATHER_JWT_KEY_ID", buildConfigString(qweatherJwtKeyId)
+        buildConfigField "String", "QWEATHER_JWT_PRIVATE_KEY", buildConfigString(qweatherJwtPrivateKey)
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     compileOptions {
