@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="216" height="216" viewBox="0 0 108 108" role="img" aria-label="Home Info Clock app icon">
+  <rect width="108" height="108" fill="#123131"/>
+  <path d="M66 0H108V108H26Z" fill="#173E3E" opacity=".75"/>
+  <path d="M0 0H58L16 108H0Z" fill="#265A55" opacity=".45"/>
+  <circle cx="55" cy="56" r="42" fill="#061616" opacity=".38"/>
+  <path d="M54 12a41 41 0 1 1 0 82a41 41 0 0 1 0-82Zm0 4.5a36.5 36.5 0 1 0 .1 0Z" fill="#6BD6C6"/>
+  <circle cx="54" cy="53" r="36" fill="#0D2A2E"/>
+  <path d="M30 28Q54 10 78 28Q92 47 78 70Q54 86 30 70Q16 47 30 28Z" fill="#164449" opacity=".72"/>
+  <g stroke="#EAF7F3" stroke-linecap="round" fill="none">
+    <path d="M54 24V30" stroke-width="3"/>
+    <path d="M30 54H36" stroke-width="2.4"/>
+    <path d="M36 36L40 40" stroke-width="2.3"/>
+    <path d="M72 36L68 40" stroke-width="2.3"/>
+  </g>
+  <g stroke="#F4F8F7" stroke-width="5.2" stroke-linecap="round" fill="none">
+    <path d="M54 54L35 40"/>
+    <path d="M54 54L78 34"/>
+  </g>
+  <circle cx="54" cy="54" r="6" fill="#EAF7F3"/>
+  <circle cx="54" cy="54" r="3.2" fill="#DDEBE8"/>
+  <circle cx="78" cy="76" r="15" fill="#F2C86D"/>
+  <g stroke="#F2C86D" stroke-width="2.2" stroke-linecap="round" fill="none">
+    <path d="M78 57V63"/>
+    <path d="M96 76H90"/>
+    <path d="M89 63L85 67"/>
+    <path d="M91 90L86 87"/>
+  </g>
+  <path d="M38 82Q39 74 47 74Q52 66 63 68Q73 68 77 76Q86 76 89 84Q90 91 81 92H36Q28 92 28 87Q28 82 38 82Z" fill="#EAF7F3"/>
+  <path d="M31 88Q38 84 47 85H81Q87 85 89 88Q88 92 81 92H36Q30 92 28 89Q29 88 31 88Z" fill="#6BD6C6" opacity=".45"/>
+</svg>

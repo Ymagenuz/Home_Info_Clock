@@ -1,5 +1,13 @@
 # Home Info Clock
 
+<p align="center">
+  <img src="docs/images/app-icon.svg" width="96" height="96" alt="Home Info Clock app icon">
+</p>
+
+<p align="center">
+  <img src="docs/images/app-screenshot.png" alt="Home Info Clock app screenshot">
+</p>
+
 一个横屏 Android 家庭信息钟。界面使用原生 `View` 绘制，适合作为旧手机、平板或常亮设备上的桌面信息屏。
 
 当前界面包含三栏：
