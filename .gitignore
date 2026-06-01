@@ -1,5 +1,7 @@
 .gradle/
 .tools/
+/apkcheck/
+/assets/
 build/
 app/build/
 local.properties
