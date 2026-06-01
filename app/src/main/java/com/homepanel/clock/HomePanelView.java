@@ -321,26 +321,10 @@ public class HomePanelView extends View {
     }
 
     private void drawBackground(Canvas canvas) {
-        paint.setShader(new LinearGradient(
-            0,
-            0,
-            getWidth(),
-            getHeight(),
-            new int[] { Color.rgb(10, 29, 29), Color.rgb(24, 35, 35), Color.rgb(41, 35, 27) },
-            new float[] { 0f, 0.57f, 1f },
-            Shader.TileMode.CLAMP
-        ));
-        canvas.drawRect(0, 0, getWidth(), getHeight(), paint);
-        paint.setShader(new RadialGradient(
-            getWidth() * 0.52f,
-            getHeight() * 0.48f,
-            Math.max(getWidth(), getHeight()) * 0.55f,
-            Color.argb(44, 120, 230, 210),
-            Color.TRANSPARENT,
-            Shader.TileMode.CLAMP
-        ));
-        canvas.drawRect(0, 0, getWidth(), getHeight(), paint);
         paint.setShader(null);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.BLACK);
+        canvas.drawRect(0, 0, getWidth(), getHeight(), paint);
     }
 
     private void drawSeparator(Canvas canvas, float x, float top, float bottom) {
@@ -565,9 +549,9 @@ public class HomePanelView extends View {
 
         for (int i = 1; i <= 12; i++) {
             double angle = Math.toRadians(i * 30 - 90);
-            float numberSize = dp(19);
-            float tx = cx + (float) Math.cos(angle) * radius * 0.73f;
-            float ty = cy + (float) Math.sin(angle) * radius * 0.73f + numberSize * 0.34f;
+            float numberSize = dp(20.5f);
+            float tx = cx + (float) Math.cos(angle) * radius * 0.78f;
+            float ty = cy + (float) Math.sin(angle) * radius * 0.78f + numberSize * 0.34f;
             drawText(canvas, String.valueOf(i), tx, ty, numberSize, Color.rgb(248, 248, 250), Paint.Align.CENTER, true);
         }
 
