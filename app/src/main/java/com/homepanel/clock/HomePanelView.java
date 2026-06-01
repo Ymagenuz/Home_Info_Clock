@@ -23,9 +23,12 @@ public class HomePanelView extends View {
     private static final int PAGE_RESET_MS = 20_000;
     private static final int LOW_BATTERY_PERCENT = 20;
     private static final long BATTERY_TRANSITION_MS = 900L;
+    private static final int RIGHT_PAGE_COUNT = 3;
+    private static final long RIGHT_PAGE_ANIMATION_MS = 260L;
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
+    private final RectF bilibiliButtonRect = new RectF();
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy年M月d日 EEEE", Locale.CHINA);
     private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm", Locale.CHINA);
     private final SimpleDateFormat updateFormat = new SimpleDateFormat("HH:mm", Locale.CHINA);
@@ -43,8 +46,13 @@ public class HomePanelView extends View {
     private float touchDownX;
     private float touchDownY;
     private boolean rightTouchActive;
+    private boolean rightDragging;
+    private float rightDragOffsetPx;
     private float rightPanelStartX;
     private float rightPanelEndX;
+    private float rightPageAnimationStart;
+    private long rightPageAnimationStartedAt = -RIGHT_PAGE_ANIMATION_MS;
+    private ActionListener actionListener;
 
     private final Runnable ticker = new Runnable() {
         @Override
@@ -57,8 +65,18 @@ public class HomePanelView extends View {
     private final Runnable resetRightPage = new Runnable() {
         @Override
         public void run() {
-            rightPage = 0;
-            invalidate();
+            setRightPage(0);
+        }
+    };
+
+    private final Runnable rightPageAnimationTicker = new Runnable() {
+        @Override
+        public void run() {
+            long elapsed = SystemClock.uptimeMillis() - rightPageAnimationStartedAt;
+            if (elapsed < RIGHT_PAGE_ANIMATION_MS) {
+                invalidate();
+                postDelayed(this, 16L);
+            }
         }
     };
 
@@ -77,6 +95,10 @@ public class HomePanelView extends View {
         super(context);
         density = getResources().getDisplayMetrics().density;
         setFocusable(true);
+    }
+
+    public void setActionListener(ActionListener listener) {
+        this.actionListener = listener;
     }
 
     public void setLocation(Location location, boolean permissionMissing) {
@@ -130,6 +152,7 @@ public class HomePanelView extends View {
         removeCallbacks(ticker);
         removeCallbacks(resetRightPage);
         removeCallbacks(batteryAnimationTicker);
+        removeCallbacks(rightPageAnimationTicker);
         super.onDetachedFromWindow();
     }
 
@@ -164,7 +187,7 @@ public class HomePanelView extends View {
 
         drawWeatherPanel(canvas, leftX, top, leftW, bottom - top);
         drawClockPanel(canvas, centerX, top, centerW, bottom - top);
-        drawRightPanel(canvas, rightX, top, width - rightX - outer, bottom - top);
+        drawAnimatedRightPanel(canvas, rightX, top, width - rightX - outer, bottom - top);
     }
 
     @Override
@@ -173,7 +196,29 @@ public class HomePanelView extends View {
             touchDownX = event.getX();
             touchDownY = event.getY();
             rightTouchActive = isInRightPanel(touchDownX);
+            rightDragging = false;
+            rightDragOffsetPx = 0f;
+            if (rightTouchActive) {
+                removeCallbacks(rightPageAnimationTicker);
+                rightPageAnimationStartedAt = -RIGHT_PAGE_ANIMATION_MS;
+            }
             return rightTouchActive;
+        }
+
+        if (event.getAction() == MotionEvent.ACTION_MOVE) {
+            if (!rightTouchActive) return false;
+
+            float dx = event.getX() - touchDownX;
+            float dy = event.getY() - touchDownY;
+            if (!rightDragging && Math.abs(dx) > dp(8) && Math.abs(dx) > Math.abs(dy)) {
+                rightDragging = true;
+                removeCallbacks(resetRightPage);
+            }
+            if (rightDragging) {
+                rightDragOffsetPx = resistedRightDrag(dx);
+                invalidate();
+            }
+            return true;
         }
 
         if (event.getAction() == MotionEvent.ACTION_UP) {
@@ -181,16 +226,24 @@ public class HomePanelView extends View {
             rightTouchActive = false;
             float dx = event.getX() - touchDownX;
             float dy = event.getY() - touchDownY;
-            if (Math.abs(dx) > dp(36) && Math.abs(dx) > Math.abs(dy)) {
-                if (dx < 0) {
-                    rightPage = Math.min(2, rightPage + 1);
-                } else {
-                    rightPage = Math.max(0, rightPage - 1);
-                }
+            if (rightDragging || (Math.abs(dx) > dp(36) && Math.abs(dx) > Math.abs(dy))) {
+                settleRightDrag(dx);
                 removeCallbacks(resetRightPage);
                 postDelayed(resetRightPage, PAGE_RESET_MS);
-                invalidate();
+            } else if (Math.abs(dx) < dp(12) && Math.abs(dy) < dp(12)) {
+                handleRightPanelTap(event.getX(), event.getY());
             }
+            rightDragging = false;
+            rightDragOffsetPx = 0f;
+            return true;
+        }
+
+        if (event.getAction() == MotionEvent.ACTION_CANCEL) {
+            if (!rightTouchActive) return false;
+            rightTouchActive = false;
+            rightDragging = false;
+            animateRightPageTo(rightPage, displayedRightPage());
+            rightDragOffsetPx = 0f;
             return true;
         }
 
@@ -213,6 +266,57 @@ public class HomePanelView extends View {
         float rightStart = outer + leftW + centerW;
         float rightEnd = width - outer;
         return x >= rightStart && x <= rightEnd;
+    }
+
+    private void setRightPage(int page) {
+        int nextPage = Math.max(0, Math.min(RIGHT_PAGE_COUNT - 1, page));
+        if (nextPage == rightPage) return;
+
+        animateRightPageTo(nextPage, rightPage);
+    }
+
+    private void settleRightDrag(float dx) {
+        float panelW = Math.max(1f, rightPanelEndX - rightPanelStartX);
+        int targetPage = rightPage;
+        if (Math.abs(dx) > panelW * 0.22f || Math.abs(dx) > dp(72)) {
+            targetPage = dx < 0 ? rightPage + 1 : rightPage - 1;
+        }
+        targetPage = Math.max(0, Math.min(RIGHT_PAGE_COUNT - 1, targetPage));
+        animateRightPageTo(targetPage, displayedRightPage());
+    }
+
+    private void animateRightPageTo(int nextPage, float fromPage) {
+        if (Math.abs(fromPage - nextPage) < 0.001f) {
+            rightPage = nextPage;
+            rightDragOffsetPx = 0f;
+            invalidate();
+            return;
+        }
+
+        rightPageAnimationStart = fromPage;
+        rightPage = nextPage;
+        rightPageAnimationStartedAt = SystemClock.uptimeMillis();
+        removeCallbacks(rightPageAnimationTicker);
+        post(rightPageAnimationTicker);
+        invalidate();
+    }
+
+    private void handleRightPanelTap(float x, float y) {
+        if (rightPage == 1 && bilibiliButtonRect.contains(x, y) && actionListener != null) {
+            actionListener.onOpenBilibili();
+        }
+    }
+
+    private float displayedRightPage() {
+        float panelW = Math.max(1f, rightPanelEndX - rightPanelStartX);
+        return rightPage - rightDragOffsetPx / panelW;
+    }
+
+    private float resistedRightDrag(float dx) {
+        if ((rightPage == 0 && dx > 0f) || (rightPage == RIGHT_PAGE_COUNT - 1 && dx < 0f)) {
+            return dx * 0.28f;
+        }
+        return dx;
     }
 
     private void drawBackground(Canvas canvas) {
@@ -500,16 +604,45 @@ public class HomePanelView extends View {
         paint.setStyle(Paint.Style.FILL);
     }
 
-    private void drawRightPanel(Canvas canvas, float x, float y, float w, float h) {
+    private void drawAnimatedRightPanel(Canvas canvas, float x, float y, float w, float h) {
         float pad = dp(18);
-        drawText(canvas, "明日天气", x + pad, y + dp(23), dp(14), Color.argb(190, 224, 242, 235), Paint.Align.LEFT, true);
+        String title = rightPage == 0 ? "明日天气" : rightPage == 1 ? "快捷入口" : "预留页";
+        drawText(canvas, title, x + pad, y + dp(23), dp(14), Color.argb(190, 224, 242, 235), Paint.Align.LEFT, true);
         drawPageDots(canvas, x + w - pad - dp(18), y + dp(21), dp(3.2f), dp(12));
 
-        if (rightPage == 0) {
-            drawTomorrowCard(canvas, x + pad, y + dp(42), w - pad * 2f, h - dp(128));
-        } else {
-            drawReservedPage(canvas, x + pad, y + dp(52), w - pad * 2f, h - dp(130), rightPage + 1);
+        float contentX = x + pad;
+        float contentY = y + dp(42);
+        float contentW = w - pad * 2f;
+        float contentH = h - dp(128);
+        bilibiliButtonRect.setEmpty();
+
+        int save = canvas.save();
+        canvas.clipRect(x, y + dp(35), x + w, y + h);
+        float animatedPage = animatedRightPage();
+        for (int page = 0; page < RIGHT_PAGE_COUNT; page++) {
+            float pageX = contentX + (page - animatedPage) * w;
+            if (pageX > x + w || pageX + contentW < x) continue;
+
+            if (page == 0) {
+                drawTomorrowCard(canvas, pageX, contentY, contentW, contentH);
+            } else if (page == 1) {
+                drawBilibiliPage(canvas, pageX, contentY + dp(10), contentW, contentH - dp(10));
+            } else {
+                drawReservedPage(canvas, pageX, contentY + dp(10), contentW, contentH - dp(10), page + 1);
+            }
         }
+        canvas.restoreToCount(save);
+    }
+
+    private float animatedRightPage() {
+        if (rightDragging) return displayedRightPage();
+
+        long elapsed = SystemClock.uptimeMillis() - rightPageAnimationStartedAt;
+        if (elapsed < 0L || elapsed >= RIGHT_PAGE_ANIMATION_MS) return rightPage;
+
+        float progress = elapsed / (float) RIGHT_PAGE_ANIMATION_MS;
+        float eased = 1f - (1f - progress) * (1f - progress) * (1f - progress);
+        return rightPageAnimationStart + (rightPage - rightPageAnimationStart) * eased;
     }
 
     private void drawTomorrowCard(Canvas canvas, float x, float y, float w, float h) {
@@ -567,6 +700,36 @@ public class HomePanelView extends View {
         canvas.drawCircle(x + dp(10), y + dp(8), dp(9), paint);
         drawText(canvas, icon, x + dp(10), y + dp(12), dp(11), Color.rgb(255, 205, 94), Paint.Align.CENTER, true);
         drawFittedText(canvas, text, x + dp(26), y + dp(12), dp(11), Color.WHITE, Paint.Align.LEFT, true, w - dp(26));
+    }
+
+    private void drawBilibiliPage(Canvas canvas, float x, float y, float w, float h) {
+        float cx = x + w * 0.5f;
+        float cy = y + h * 0.42f;
+
+        paint.setShader(new RadialGradient(cx, cy - dp(20), dp(92), Color.argb(38, 251, 114, 153), Color.TRANSPARENT, Shader.TileMode.CLAMP));
+        canvas.drawCircle(cx, cy - dp(20), dp(92), paint);
+        paint.setShader(null);
+
+        drawText(canvas, "Bilibili", cx, cy - dp(28), dp(28), Color.WHITE, Paint.Align.CENTER, true);
+        drawFittedText(canvas, "打开哔哩哔哩 App", cx, cy + dp(2), dp(13), Color.argb(185, 224, 242, 235), Paint.Align.CENTER, false, w - dp(24));
+
+        float buttonW = Math.min(w - dp(28), dp(178));
+        float buttonH = dp(48);
+        float buttonX = cx - buttonW * 0.5f;
+        float buttonY = cy + dp(30);
+        bilibiliButtonRect.set(buttonX, buttonY, buttonX + buttonW, buttonY + buttonH);
+
+        paint.setShader(new LinearGradient(buttonX, buttonY, buttonX + buttonW, buttonY + buttonH, Color.rgb(255, 125, 163), Color.rgb(67, 196, 255), Shader.TileMode.CLAMP));
+        canvas.drawRoundRect(bilibiliButtonRect, dp(8), dp(8), paint);
+        paint.setShader(null);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(1));
+        paint.setColor(Color.argb(85, 255, 255, 255));
+        canvas.drawRoundRect(bilibiliButtonRect, dp(8), dp(8), paint);
+        paint.setStyle(Paint.Style.FILL);
+
+        drawText(canvas, ">", buttonX + dp(38), buttonY + dp(31), dp(17), Color.WHITE, Paint.Align.CENTER, true);
+        drawText(canvas, "打开 Bilibili", buttonX + buttonW * 0.58f, buttonY + dp(31), dp(15), Color.WHITE, Paint.Align.CENTER, true);
     }
 
     private void drawReservedPage(Canvas canvas, float x, float y, float w, float h, int page) {
@@ -733,5 +896,9 @@ public class HomePanelView extends View {
         public String sportTip;
         public String travelTip;
         public String sunProtectionTip;
+    }
+
+    public interface ActionListener {
+        void onOpenBilibili();
     }
 }

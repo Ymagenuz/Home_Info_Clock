@@ -13,6 +13,7 @@ import android.location.Geocoder;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.net.Uri;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -22,6 +23,7 @@ import android.util.Log;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
+import android.widget.Toast;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -100,6 +102,7 @@ public class MainActivity extends Activity {
         enterImmersiveMode();
 
         panelView = new HomePanelView(this);
+        panelView.setActionListener(this::openBilibili);
         setContentView(panelView);
 
         locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
@@ -300,6 +303,30 @@ public class MainActivity extends Activity {
         } catch (IllegalArgumentException ignored) {
         }
         batteryReceiverRegistered = false;
+    }
+
+    private void openBilibili() {
+        String[] packageNames = {
+            "tv.danmaku.bili",
+            "com.bilibili.app.in",
+            "com.bilibili.app.blue"
+        };
+
+        for (String packageName : packageNames) {
+            Intent launchIntent = getPackageManager().getLaunchIntentForPackage(packageName);
+            if (launchIntent == null) continue;
+
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(launchIntent);
+            return;
+        }
+
+        try {
+            Intent deepLink = new Intent(Intent.ACTION_VIEW, Uri.parse("bilibili://home"));
+            startActivity(deepLink);
+        } catch (Exception error) {
+            Toast.makeText(this, "未找到 Bilibili App", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void fetchWeatherIfNeeded(boolean allowCached) {
