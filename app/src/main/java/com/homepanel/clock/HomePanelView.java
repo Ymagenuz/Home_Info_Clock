@@ -244,7 +244,7 @@ public class HomePanelView extends View {
         drawFittedText(canvas, title, x + pad, titleY, label, Color.argb(190, 224, 242, 235), Paint.Align.LEFT, true, w - pad * 2f);
 
         String updated = weather != null
-            ? "更新 " + updateFormat.format(weather.updatedAtMillis) + " · 15分钟刷新"
+            ? "更新 " + updateFormat.format(weather.updatedAtMillis) + " · 30分钟刷新"
             : locationPermissionMissing ? "需要定位权限" : weatherStatus;
         if (weather != null && weather.sourceLabel != null && !weather.sourceLabel.isEmpty()) {
             updated = updated + " · " + weather.sourceLabel;

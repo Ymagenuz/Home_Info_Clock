@@ -32,9 +32,26 @@ app\build\outputs\apk\debug\app-debug.apk
 - QWeather is optional and used only as an enhancement path when UAPI is unavailable or when future forecast data is needed.
 - Before taking device screenshots for visual QA, ask the user first. Screenshots are useful but expensive in token budget.
 
+## Device QA
+
+- The development machine is connected to the phone, and USB debugging is enabled.
+- Use screenshots for closed-loop visual verification, but always ask the user for confirmation before taking any screenshot.
+
 ## UAPI Weather
 
-The personal app uses UAPI as the primary weather source because it requires no account or key:
+The personal app uses UAPI as the primary weather source. It can still run anonymously, but registered UAPI usage is preferred for a higher quota. Add your registered UAPI key/token to `local.properties`:
+
+```properties
+UAPI_TOKEN=your_uapi_token
+```
+
+The app sends this as:
+
+```text
+Authorization: Bearer <token>
+```
+
+When `UAPI_TOKEN` is omitted, the app falls back to anonymous UAPI access:
 
 ```text
 https://uapis.cn/api/v1/misc/weather?city=...&forecast=true&indices=true

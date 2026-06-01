@@ -41,6 +41,10 @@ def qweatherJwtPrivateKeyFile = localProps.getProperty("QWEATHER_JWT_PRIVATE_KEY
     ?: localProps.getProperty("qweather.jwtPrivateKeyFile")
     ?: findProperty("QWEATHER_JWT_PRIVATE_KEY_FILE")
     ?: ""
+def uapiToken = localProps.getProperty("UAPI_TOKEN")
+    ?: localProps.getProperty("uapi.token")
+    ?: findProperty("UAPI_TOKEN")
+    ?: ""
 
 if (qweatherJwtPrivateKeyFile) {
     def keyFile = file(qweatherJwtPrivateKeyFile)
@@ -68,6 +72,7 @@ android {
         buildConfigField "String", "QWEATHER_JWT_PROJECT_ID", buildConfigString(qweatherJwtProjectId)
         buildConfigField "String", "QWEATHER_JWT_KEY_ID", buildConfigString(qweatherJwtKeyId)
         buildConfigField "String", "QWEATHER_JWT_PRIVATE_KEY", buildConfigString(qweatherJwtPrivateKey)
+        buildConfigField "String", "UAPI_TOKEN", buildConfigString(uapiToken)
     }
 
     buildFeatures {

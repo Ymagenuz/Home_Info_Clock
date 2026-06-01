@@ -46,7 +46,7 @@ import java.util.zip.GZIPInputStream;
 public class MainActivity extends Activity {
     private static final int LOCATION_REQUEST_CODE = 1001;
     private static final String TAG = "HomeInfoClock";
-    private static final long WEATHER_REFRESH_MS = 15L * 60L * 1000L;
+    private static final long WEATHER_REFRESH_MS = 30L * 60L * 1000L;
     private static final long LOCATION_REFRESH_MS = 30_000L;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -449,7 +449,7 @@ public class MainActivity extends Activity {
                 String url = "https://uapis.cn/api/v1/misc/weather?city="
                     + URLEncoder.encode(city, "UTF-8")
                     + "&forecast=true&indices=true";
-                JSONObject candidate = new JSONObject(readUrl(url));
+                JSONObject candidate = new JSONObject(readUapiUrl(url));
                 if (candidate.has("code") && candidate.optInt("code") != 200) {
                     throw new IllegalStateException("UAPI weather request failed: " + candidate);
                 }
@@ -663,7 +663,15 @@ public class MainActivity extends Activity {
         return readUrl(urlText, false);
     }
 
+    private String readUapiUrl(String urlText) throws Exception {
+        return readUrl(urlText, false, true);
+    }
+
     private String readUrl(String urlText, boolean qweatherRequest) throws Exception {
+        return readUrl(urlText, qweatherRequest, false);
+    }
+
+    private String readUrl(String urlText, boolean qweatherRequest, boolean uapiRequest) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(urlText).openConnection();
         connection.setConnectTimeout(8_000);
         connection.setReadTimeout(8_000);
@@ -671,6 +679,9 @@ public class MainActivity extends Activity {
         connection.setRequestProperty("Accept-Encoding", "gzip");
         if (qweatherRequest) {
             applyQWeatherAuth(connection);
+        }
+        if (uapiRequest) {
+            applyUapiAuth(connection);
         }
 
         InputStream input = connection.getInputStream();
@@ -699,6 +710,16 @@ public class MainActivity extends Activity {
         if (hasQWeatherApiKey()) {
             connection.setRequestProperty("X-QW-Api-Key", BuildConfig.QWEATHER_API_KEY.trim());
         }
+    }
+
+    private void applyUapiAuth(HttpURLConnection connection) {
+        if (hasUapiToken()) {
+            connection.setRequestProperty("Authorization", "Bearer " + BuildConfig.UAPI_TOKEN.trim());
+        }
+    }
+
+    private boolean hasUapiToken() {
+        return BuildConfig.UAPI_TOKEN != null && !BuildConfig.UAPI_TOKEN.trim().isEmpty();
     }
 
     private boolean hasQWeatherApiKey() {
