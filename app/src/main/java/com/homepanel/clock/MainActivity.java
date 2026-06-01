@@ -31,6 +31,7 @@ import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
@@ -358,6 +359,7 @@ public class MainActivity extends Activity {
             try {
                 HomePanelView.WeatherSnapshot snapshot = fetchWeather(requestLocation);
                 snapshot.locationLabel = resolveLocationLabel(requestLocation);
+                applyGptsApiAdvice(snapshot);
                 snapshot.updatedAtMillis = System.currentTimeMillis();
                 mainHandler.post(() -> {
                     lastWeatherFetchAt = snapshot.updatedAtMillis;
@@ -730,6 +732,166 @@ public class MainActivity extends Activity {
         day.sunProtectionTip = indices.get("16");
     }
 
+    private void applyGptsApiAdvice(HomePanelView.WeatherSnapshot snapshot) {
+        if (!hasGptsApiKey() || snapshot == null || snapshot.days.size() <= 1) return;
+
+        HomePanelView.WeatherDay tomorrow = snapshot.days.get(1);
+        try {
+            JSONObject advice = requestGptsApiAdvice(snapshot, tomorrow);
+            String clothing = cleanAiAdvice(advice.optString("clothing"));
+            String umbrella = cleanAiAdvice(advice.optString("umbrella"));
+            String travel = cleanAiAdvice(advice.optString("travel"));
+            boolean applied = false;
+
+            if (clothing != null) {
+                tomorrow.clothingTip = clothing;
+                applied = true;
+            }
+            if (umbrella != null) {
+                tomorrow.umbrellaTip = umbrella;
+                applied = true;
+            }
+            if (travel != null) {
+                tomorrow.travelTip = travel;
+                applied = true;
+            }
+
+            if (applied) {
+                snapshot.sourceLabel = appendSourceLabel(snapshot.sourceLabel, "AI建议");
+            }
+        } catch (Exception error) {
+            Log.w(TAG, "GPTsAPI advice fetch failed", error);
+        }
+    }
+
+    private JSONObject requestGptsApiAdvice(HomePanelView.WeatherSnapshot snapshot, HomePanelView.WeatherDay tomorrow) throws Exception {
+        JSONObject weather = new JSONObject()
+            .put("location", snapshot.locationLabel)
+            .put("date", tomorrow.date)
+            .put("condition", tomorrow.description)
+            .put("high_celsius", tomorrow.high)
+            .put("low_celsius", tomorrow.low)
+            .put("precipitation_probability_percent", tomorrow.precipitation)
+            .put("uv_index", tomorrow.uv)
+            .put("wind_kmh", tomorrow.windKmh)
+            .put("wind_direction", tomorrow.windDirection == null ? "" : tomorrow.windDirection);
+
+        JSONArray messages = new JSONArray()
+            .put(new JSONObject()
+                .put("role", "system")
+                .put("content", "你是家庭信息屏的天气生活建议助手。只输出严格 JSON，不要 Markdown。字段必须是 clothing、umbrella、travel，值为简短中文建议，每条不超过22个汉字。"))
+            .put(new JSONObject()
+                .put("role", "user")
+                .put("content", "请基于明日天气给出穿衣、带伞、出行三条建议。天气数据：" + weather));
+
+        JSONObject request = new JSONObject()
+            .put("model", gptsApiModel())
+            .put("messages", messages)
+            .put("max_tokens", 180);
+
+        JSONObject response = new JSONObject(postJson(gptsApiChatCompletionsUrl(), request.toString(), true));
+        JSONArray choices = response.getJSONArray("choices");
+        JSONObject message = choices.getJSONObject(0).getJSONObject("message");
+        String content = message.optString("content", "");
+        return new JSONObject(extractJsonObject(content));
+    }
+
+    private String postJson(String urlText, String body, boolean gptsapiRequest) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(urlText).openConnection();
+        connection.setConnectTimeout(8_000);
+        connection.setReadTimeout(12_000);
+        connection.setRequestMethod("POST");
+        connection.setDoOutput(true);
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+        connection.setRequestProperty("Accept-Encoding", "gzip");
+        if (gptsapiRequest) {
+            applyGptsApiAuth(connection);
+        }
+
+        try (OutputStream output = connection.getOutputStream()) {
+            output.write(body.getBytes(StandardCharsets.UTF_8));
+        }
+
+        return readConnection(connection);
+    }
+
+    private String readConnection(HttpURLConnection connection) throws Exception {
+        int status = connection.getResponseCode();
+        InputStream input = status >= 200 && status < 300
+            ? connection.getInputStream()
+            : connection.getErrorStream();
+        if (input == null) {
+            throw new IllegalStateException("request failed: HTTP " + status);
+        }
+        if ("gzip".equalsIgnoreCase(connection.getContentEncoding())) {
+            input = new GZIPInputStream(input);
+        }
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8))) {
+            StringBuilder builder = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                builder.append(line);
+            }
+            if (status < 200 || status >= 300) {
+                throw new IllegalStateException("request failed: HTTP " + status + " " + builder);
+            }
+            return builder.toString();
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private String extractJsonObject(String content) {
+        String value = content == null ? "" : content.trim();
+        int start = value.indexOf('{');
+        int end = value.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            return value.substring(start, end + 1);
+        }
+        return value;
+    }
+
+    private String cleanAiAdvice(String value) {
+        if (value == null) return null;
+        String cleaned = value.trim()
+            .replace('\n', ' ')
+            .replace('\r', ' ')
+            .replace("。", "");
+        while (cleaned.contains("  ")) {
+            cleaned = cleaned.replace("  ", " ");
+        }
+        if (cleaned.isEmpty()) return null;
+        if (cleaned.length() > 28) {
+            cleaned = cleaned.substring(0, 28);
+        }
+        return cleaned + "。";
+    }
+
+    private String appendSourceLabel(String current, String addition) {
+        if (addition == null || addition.trim().isEmpty()) return current;
+        if (current == null || current.trim().isEmpty()) return addition;
+        if (current.contains(addition)) return current;
+        return current + "+" + addition;
+    }
+
+    private String gptsApiChatCompletionsUrl() {
+        String baseUrl = BuildConfig.GPTSAPI_BASE_URL == null || BuildConfig.GPTSAPI_BASE_URL.trim().isEmpty()
+            ? "https://api.gptsapi.net/v1"
+            : BuildConfig.GPTSAPI_BASE_URL.trim();
+        while (baseUrl.endsWith("/")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+        }
+        return baseUrl + "/chat/completions";
+    }
+
+    private String gptsApiModel() {
+        return BuildConfig.GPTSAPI_MODEL == null || BuildConfig.GPTSAPI_MODEL.trim().isEmpty()
+            ? "gpt-5.4-nano"
+            : BuildConfig.GPTSAPI_MODEL.trim();
+    }
+
     private String readUrl(String urlText) throws Exception {
         return readUrl(urlText, false);
     }
@@ -755,21 +917,7 @@ public class MainActivity extends Activity {
             applyUapiAuth(connection);
         }
 
-        InputStream input = connection.getInputStream();
-        if ("gzip".equalsIgnoreCase(connection.getContentEncoding())) {
-            input = new GZIPInputStream(input);
-        }
-
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8))) {
-            StringBuilder builder = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                builder.append(line);
-            }
-            return builder.toString();
-        } finally {
-            connection.disconnect();
-        }
+        return readConnection(connection);
     }
 
     private void applyQWeatherAuth(HttpURLConnection connection) throws Exception {
@@ -789,8 +937,16 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void applyGptsApiAuth(HttpURLConnection connection) {
+        connection.setRequestProperty("Authorization", "Bearer " + BuildConfig.GPTSAPI_API_KEY.trim());
+    }
+
     private boolean hasUapiToken() {
         return BuildConfig.UAPI_TOKEN != null && !BuildConfig.UAPI_TOKEN.trim().isEmpty();
+    }
+
+    private boolean hasGptsApiKey() {
+        return BuildConfig.GPTSAPI_API_KEY != null && !BuildConfig.GPTSAPI_API_KEY.trim().isEmpty();
     }
 
     private boolean hasQWeatherApiKey() {

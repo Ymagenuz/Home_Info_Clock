@@ -27,6 +27,7 @@ app\build\outputs\apk\debug\app-debug.apk
 - The UI is drawn by `HomePanelView`, with column widths, clock size, and text size calculated from the device screen.
 - Location comes from Android `LocationManager`.
 - Weather comes from UAPI realtime weather by default.
+- Right-column lifestyle tips can be enriched by GPTsAPI when configured.
 - City labels come from Android `Geocoder`, with coordinates as the fallback.
 - Battery state comes from Android `ACTION_BATTERY_CHANGED`.
 - QWeather is optional and used only as an enhancement path when UAPI is unavailable or when future forecast data is needed.
@@ -58,6 +59,30 @@ https://uapis.cn/api/v1/misc/weather?city=...&forecast=true&indices=true
 ```
 
 The app queries by district first, then city, based on Android `Geocoder` results. UAPI provides realtime weather, current temperature, humidity, wind, report time, up to 7 days of forecast data via `forecast=true`, and lifestyle indices via `indices=true`. Open-Meteo and QWeather remain fallback/enhancement paths only when UAPI is unavailable or missing forecast data.
+
+## GPTsAPI AI Tips
+
+The right-column tomorrow tips use local weather rules by default. To let AI rewrite the clothing, umbrella, and outing suggestions, add a GPTsAPI key to `local.properties`:
+
+```properties
+GPTSAPI_API_KEY=your_gptsapi_key
+```
+
+The default GPTsAPI settings are:
+
+```properties
+GPTSAPI_BASE_URL=https://api.gptsapi.net/v1
+GPTSAPI_MODEL=gpt-5.4-nano
+```
+
+The app calls the OpenAI-compatible chat completions endpoint:
+
+```text
+POST https://api.gptsapi.net/v1/chat/completions
+Authorization: Bearer <key>
+```
+
+If the key is missing, the request fails, or the response cannot be parsed as JSON, the app keeps the existing weather-source/fallback tips so the right column still renders normally.
 
 ## QWeather Configuration
 

@@ -45,6 +45,18 @@ def uapiToken = localProps.getProperty("UAPI_TOKEN")
     ?: localProps.getProperty("uapi.token")
     ?: findProperty("UAPI_TOKEN")
     ?: ""
+def gptsapiApiKey = localProps.getProperty("GPTSAPI_API_KEY")
+    ?: localProps.getProperty("gptsapi.apiKey")
+    ?: findProperty("GPTSAPI_API_KEY")
+    ?: ""
+def gptsapiBaseUrl = localProps.getProperty("GPTSAPI_BASE_URL")
+    ?: localProps.getProperty("gptsapi.baseUrl")
+    ?: findProperty("GPTSAPI_BASE_URL")
+    ?: "https://api.gptsapi.net/v1"
+def gptsapiModel = localProps.getProperty("GPTSAPI_MODEL")
+    ?: localProps.getProperty("gptsapi.model")
+    ?: findProperty("GPTSAPI_MODEL")
+    ?: "gpt-5.4-nano"
 
 if (qweatherJwtPrivateKeyFile) {
     def keyFile = file(qweatherJwtPrivateKeyFile)
@@ -73,6 +85,9 @@ android {
         buildConfigField "String", "QWEATHER_JWT_KEY_ID", buildConfigString(qweatherJwtKeyId)
         buildConfigField "String", "QWEATHER_JWT_PRIVATE_KEY", buildConfigString(qweatherJwtPrivateKey)
         buildConfigField "String", "UAPI_TOKEN", buildConfigString(uapiToken)
+        buildConfigField "String", "GPTSAPI_API_KEY", buildConfigString(gptsapiApiKey)
+        buildConfigField "String", "GPTSAPI_BASE_URL", buildConfigString(gptsapiBaseUrl)
+        buildConfigField "String", "GPTSAPI_MODEL", buildConfigString(gptsapiModel)
     }
 
     buildFeatures {
