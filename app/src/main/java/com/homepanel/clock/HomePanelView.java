@@ -678,7 +678,7 @@ public class HomePanelView extends View {
         List<String[]> tips = buildTips(tomorrow);
         float tipY = gridY + dp(122);
         for (int i = 0; i < tips.size(); i++) {
-            drawTip(canvas, x + dp(10), tipY + i * dp(27), w - dp(20), tips.get(i)[0], tips.get(i)[1]);
+            drawTip(canvas, x + dp(10), tipY + i * dp(42), w - dp(20), tips.get(i)[0], tips.get(i)[1]);
         }
     }
 
@@ -697,9 +697,9 @@ public class HomePanelView extends View {
 
     private void drawTip(Canvas canvas, float x, float y, float w, String icon, String text) {
         paint.setColor(Color.argb(36, 255, 205, 94));
-        canvas.drawCircle(x + dp(10), y + dp(8), dp(9), paint);
-        drawText(canvas, icon, x + dp(10), y + dp(12), dp(11), Color.rgb(255, 205, 94), Paint.Align.CENTER, true);
-        drawFittedText(canvas, text, x + dp(26), y + dp(12), dp(11), Color.WHITE, Paint.Align.LEFT, true, w - dp(26));
+        canvas.drawCircle(x + dp(10), y + dp(10), dp(9), paint);
+        drawText(canvas, icon, x + dp(10), y + dp(14), dp(11), Color.rgb(255, 205, 94), Paint.Align.CENTER, true);
+        drawMultilineEllipsizedText(canvas, text, x + dp(28), y + dp(14), dp(12.8f), Color.WHITE, w - dp(28), 2);
     }
 
     private void drawBilibiliPage(Canvas canvas, float x, float y, float w, float h) {
@@ -798,6 +798,56 @@ public class HomePanelView extends View {
             value = value.substring(0, value.length() - 1);
         }
         return value.length() < text.length() ? value + "..." : value;
+    }
+
+    private void drawMultilineEllipsizedText(Canvas canvas, String text, float x, float y, float size, int color, float maxWidth, int maxLines) {
+        String value = text == null ? "" : text.trim();
+        if (value.isEmpty() || maxLines <= 0) return;
+
+        paint.setShader(null);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(color);
+        paint.setTextAlign(Paint.Align.LEFT);
+        paint.setTextSize(size);
+        paint.setFakeBoldText(true);
+
+        ArrayList<String> lines = new ArrayList<>();
+        StringBuilder line = new StringBuilder();
+        boolean overflow = false;
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            String next = line.toString() + c;
+            if (line.length() > 0 && paint.measureText(next) > maxWidth) {
+                lines.add(line.toString());
+                line.setLength(0);
+                line.append(c);
+                if (lines.size() == maxLines) {
+                    overflow = true;
+                    break;
+                }
+            } else {
+                line.append(c);
+            }
+        }
+
+        if (!overflow && line.length() > 0) {
+            lines.add(line.toString());
+        }
+        if (lines.size() > maxLines) {
+            overflow = true;
+            while (lines.size() > maxLines) {
+                lines.remove(lines.size() - 1);
+            }
+        }
+        if (overflow && !lines.isEmpty()) {
+            lines.set(lines.size() - 1, ellipsize(lines.get(lines.size() - 1), maxWidth));
+        }
+
+        float lineHeight = dp(15.5f);
+        for (int i = 0; i < lines.size(); i++) {
+            canvas.drawText(lines.get(i), x, y + i * lineHeight, paint);
+        }
+        paint.setFakeBoldText(false);
     }
 
     private List<String[]> buildTips(WeatherDay day) {

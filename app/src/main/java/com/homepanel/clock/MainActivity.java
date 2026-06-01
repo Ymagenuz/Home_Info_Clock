@@ -779,7 +779,7 @@ public class MainActivity extends Activity {
         JSONArray messages = new JSONArray()
             .put(new JSONObject()
                 .put("role", "system")
-                .put("content", "你是家庭信息屏的天气生活建议助手。只输出严格 JSON，不要 Markdown。字段必须是 clothing、umbrella、travel，值为简短中文建议，每条不超过22个汉字。"))
+                .put("content", "你是家庭信息屏的天气生活建议助手。只输出严格 JSON，不要 Markdown。字段必须是 clothing、umbrella、travel。每条最多18个汉字，只写一句具体建议，不要解释。"))
             .put(new JSONObject()
                 .put("role", "user")
                 .put("content", "请基于明日天气给出穿衣、带伞、出行三条建议。天气数据：" + weather));
@@ -787,7 +787,7 @@ public class MainActivity extends Activity {
         JSONObject request = new JSONObject()
             .put("model", gptsApiModel())
             .put("messages", messages)
-            .put("max_tokens", 180);
+            .put("max_tokens", 120);
 
         JSONObject response = new JSONObject(postJson(gptsApiChatCompletionsUrl(), request.toString(), true));
         JSONArray choices = response.getJSONArray("choices");
@@ -863,8 +863,8 @@ public class MainActivity extends Activity {
             cleaned = cleaned.replace("  ", " ");
         }
         if (cleaned.isEmpty()) return null;
-        if (cleaned.length() > 28) {
-            cleaned = cleaned.substring(0, 28);
+        if (cleaned.length() > 24) {
+            cleaned = cleaned.substring(0, 24);
         }
         return cleaned + "。";
     }
