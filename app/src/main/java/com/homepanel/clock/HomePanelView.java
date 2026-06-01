@@ -25,6 +25,7 @@ public class HomePanelView extends View {
     private static final long BATTERY_TRANSITION_MS = 900L;
     private static final int RIGHT_PAGE_COUNT = 3;
     private static final long RIGHT_PAGE_ANIMATION_MS = 260L;
+    private static final long CLOCK_FRAME_MS = 33L;
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
@@ -58,7 +59,7 @@ public class HomePanelView extends View {
         @Override
         public void run() {
             invalidate();
-            postDelayed(this, 1_000L);
+            postDelayed(this, CLOCK_FRAME_MS);
         }
     };
 
@@ -554,41 +555,99 @@ public class HomePanelView extends View {
 
     private void drawClockPanel(Canvas canvas, float x, float y, float w, float h) {
         Calendar now = Calendar.getInstance(Locale.CHINA);
+        long nowMillis = System.currentTimeMillis();
+        now.setTimeInMillis(nowMillis);
         float cx = x + w * 0.5f;
-        float radius = Math.min(w * 0.34f, h * 0.34f);
-        float cy = y + Math.max(radius + dp(18), h * 0.36f);
+        float radius = Math.min(w * 0.37f, h * 0.36f);
+        float cy = y + Math.max(radius + dp(12), h * 0.36f);
 
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(dp(6));
-        paint.setColor(Color.rgb(224, 237, 233));
-        canvas.drawCircle(cx, cy, radius, paint);
-
-        paint.setStrokeWidth(dp(1));
-        paint.setColor(Color.argb(38, 255, 255, 255));
-        canvas.drawCircle(cx, cy, radius * 0.78f, paint);
-        paint.setStyle(Paint.Style.FILL);
+        drawAppleClockMarks(canvas, cx, cy, radius);
 
         for (int i = 1; i <= 12; i++) {
             double angle = Math.toRadians(i * 30 - 90);
-            float tx = cx + (float) Math.cos(angle) * radius * 0.78f;
-            float ty = cy + (float) Math.sin(angle) * radius * 0.78f + dp(5);
-            drawText(canvas, String.valueOf(i), tx, ty, dp(17), Color.argb(235, 255, 255, 255), Paint.Align.CENTER, true);
+            float numberSize = dp(19);
+            float tx = cx + (float) Math.cos(angle) * radius * 0.73f;
+            float ty = cy + (float) Math.sin(angle) * radius * 0.73f + numberSize * 0.34f;
+            drawText(canvas, String.valueOf(i), tx, ty, numberSize, Color.rgb(248, 248, 250), Paint.Align.CENTER, true);
         }
 
         int hour = now.get(Calendar.HOUR);
         int minute = now.get(Calendar.MINUTE);
-        float minuteAngle = minute * 6f - 90f;
+        int second = now.get(Calendar.SECOND);
+        float smoothSecond = second + (nowMillis % 1000L) / 1000f;
+        float secondAngle = smoothSecond * 6f - 90f;
+        float minuteAngle = (minute + smoothSecond / 60f) * 6f - 90f;
         float hourAngle = (hour + minute / 60f) * 30f - 90f;
-        drawHand(canvas, cx, cy, hourAngle, radius * 0.47f, dp(7), Color.rgb(238, 248, 245));
-        drawHand(canvas, cx, cy, minuteAngle, radius * 0.66f, dp(5), Color.rgb(99, 220, 205));
+        drawPrimaryClockHand(canvas, cx, cy, hourAngle, radius * 0.43f, radius * 0.08f, radius * 0.16f, dp(8.7f));
+        drawPrimaryClockHand(canvas, cx, cy, minuteAngle, radius * 0.68f, radius * 0.10f, radius * 0.17f, dp(7.8f));
+        drawClockHand(canvas, cx, cy, secondAngle, radius * 0.88f, radius * 0.12f, dp(2), Color.rgb(255, 179, 0));
 
-        paint.setColor(Color.rgb(245, 196, 82));
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.rgb(255, 179, 0));
         canvas.drawCircle(cx, cy, dp(8), paint);
-        paint.setColor(Color.WHITE);
-        canvas.drawCircle(cx, cy, dp(4), paint);
+        paint.setColor(Color.rgb(20, 20, 20));
+        canvas.drawCircle(cx, cy, dp(4.5f), paint);
 
         drawText(canvas, dateFormat.format(now.getTime()), cx, y + h - dp(88), dp(18), Color.argb(190, 224, 242, 235), Paint.Align.CENTER, true);
         drawText(canvas, timeFormat.format(now.getTime()), cx, y + h - dp(22), scaleText(h, 56, 74), Color.rgb(238, 250, 246), Paint.Align.CENTER, true);
+    }
+
+    private void drawAppleClockMarks(Canvas canvas, float cx, float cy, float radius) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        for (int i = 0; i < 60; i++) {
+            boolean major = i % 5 == 0;
+            double angle = Math.toRadians(i * 6 - 90);
+            float outer = radius * 0.98f;
+            float inner = radius * 0.91f;
+            float startX = cx + (float) Math.cos(angle) * inner;
+            float startY = cy + (float) Math.sin(angle) * inner;
+            float endX = cx + (float) Math.cos(angle) * outer;
+            float endY = cy + (float) Math.sin(angle) * outer;
+
+            paint.setStrokeWidth(major ? dp(3.6f) : dp(2.2f));
+            paint.setColor(major ? Color.argb(225, 248, 248, 250) : Color.argb(118, 248, 248, 250));
+            canvas.drawLine(startX, startY, endX, endY, paint);
+        }
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawClockHand(Canvas canvas, float cx, float cy, float angleDeg, float length, float backLength, float stroke, int color) {
+        double angle = Math.toRadians(angleDeg);
+        float startX = cx - (float) Math.cos(angle) * backLength;
+        float startY = cy - (float) Math.sin(angle) * backLength;
+        float endX = cx + (float) Math.cos(angle) * length;
+        float endY = cy + (float) Math.sin(angle) * length;
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(stroke);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setColor(color);
+        canvas.drawLine(startX, startY, endX, endY, paint);
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawPrimaryClockHand(Canvas canvas, float cx, float cy, float angleDeg, float length, float backLength, float neckLength, float stroke) {
+        double angle = Math.toRadians(angleDeg);
+        float neckEndX = cx + (float) Math.cos(angle) * neckLength;
+        float neckEndY = cy + (float) Math.sin(angle) * neckLength;
+        float endX = cx + (float) Math.cos(angle) * length;
+        float endY = cy + (float) Math.sin(angle) * length;
+
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(stroke);
+        paint.setColor(Color.rgb(248, 248, 250));
+        canvas.drawLine(neckEndX, neckEndY, endX, endY, paint);
+
+        float neckStartX = cx - (float) Math.cos(angle) * backLength;
+        float neckStartY = cy - (float) Math.sin(angle) * backLength;
+        paint.setStrokeWidth(stroke * 0.44f);
+        paint.setColor(Color.rgb(188, 190, 196));
+        canvas.drawLine(neckStartX, neckStartY, neckEndX, neckEndY, paint);
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
     }
 
     private void drawHand(Canvas canvas, float cx, float cy, float angleDeg, float length, float stroke, int color) {
