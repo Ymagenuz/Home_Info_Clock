@@ -3,6 +3,7 @@ package com.homepanel.clock;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -13,6 +14,7 @@ import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.BatteryManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -61,6 +63,7 @@ public class MainActivity extends Activity {
     private String cachedQWeatherJwt;
     private long cachedQWeatherJwtExpiresAtSeconds;
     private boolean fetchingWeather;
+    private boolean batteryReceiverRegistered;
 
     private final LocationListener locationListener = location -> {
         lastLocation = location;
@@ -71,6 +74,13 @@ public class MainActivity extends Activity {
         panelView.setLocation(location, false);
         resolveLocationLabelIfNeeded(location);
         fetchWeatherIfNeeded(false);
+    };
+
+    private final BroadcastReceiver batteryReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            updateBattery(intent);
+        }
     };
 
     private final Runnable refreshRunnable = new Runnable() {
@@ -101,6 +111,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         enterImmersiveMode();
+        startBatteryUpdates();
         updateBattery();
         startLocationUpdates();
         fetchWeatherIfNeeded(true);
@@ -111,6 +122,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        stopBatteryUpdates();
         stopLocationUpdates();
         mainHandler.removeCallbacks(refreshRunnable);
     }
@@ -246,16 +258,48 @@ public class MainActivity extends Activity {
 
     private void updateBattery() {
         Intent status = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        updateBattery(status);
+    }
+
+    private void updateBattery(Intent status) {
         if (status == null) return;
 
         int level = status.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
         int scale = status.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
         int plugged = status.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0);
+        int state = status.getIntExtra(BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_UNKNOWN);
         int percent = scale > 0 && level >= 0 ? Math.round(level * 100f / scale) : -1;
+        boolean charging = plugged != 0
+            || state == BatteryManager.BATTERY_STATUS_CHARGING
+            || state == BatteryManager.BATTERY_STATUS_FULL;
 
         if (percent >= 0) {
-            panelView.setBattery(percent, plugged != 0);
+            panelView.setBattery(percent, charging);
         }
+    }
+
+    private void startBatteryUpdates() {
+        if (batteryReceiverRegistered) return;
+
+        IntentFilter filter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+        Intent sticky;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            sticky = registerReceiver(batteryReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            sticky = registerReceiver(batteryReceiver, filter);
+        }
+        batteryReceiverRegistered = true;
+        updateBattery(sticky);
+    }
+
+    private void stopBatteryUpdates() {
+        if (!batteryReceiverRegistered) return;
+
+        try {
+            unregisterReceiver(batteryReceiver);
+        } catch (IllegalArgumentException ignored) {
+        }
+        batteryReceiverRegistered = false;
     }
 
     private void fetchWeatherIfNeeded(boolean allowCached) {

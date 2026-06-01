@@ -9,6 +9,7 @@ import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.location.Location;
+import android.os.SystemClock;
 import android.view.MotionEvent;
 import android.view.View;
 
@@ -20,6 +21,8 @@ import java.util.Locale;
 
 public class HomePanelView extends View {
     private static final int PAGE_RESET_MS = 20_000;
+    private static final int LOW_BATTERY_PERCENT = 20;
+    private static final long BATTERY_TRANSITION_MS = 900L;
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
@@ -35,6 +38,7 @@ public class HomePanelView extends View {
     private boolean locationPermissionMissing;
     private int batteryLevel = -1;
     private boolean batteryCharging;
+    private long batteryTransitionStartedAt = -BATTERY_TRANSITION_MS;
     private int rightPage;
     private float touchDownX;
     private float touchDownY;
@@ -55,6 +59,17 @@ public class HomePanelView extends View {
         public void run() {
             rightPage = 0;
             invalidate();
+        }
+    };
+
+    private final Runnable batteryAnimationTicker = new Runnable() {
+        @Override
+        public void run() {
+            long elapsed = SystemClock.uptimeMillis() - batteryTransitionStartedAt;
+            if (elapsed < BATTERY_TRANSITION_MS) {
+                invalidate();
+                postDelayed(this, 16L);
+            }
         }
     };
 
@@ -92,8 +107,14 @@ public class HomePanelView extends View {
     }
 
     public void setBattery(int level, boolean charging) {
+        boolean chargingChanged = batteryLevel >= 0 && batteryCharging != charging;
         this.batteryLevel = level;
         this.batteryCharging = charging;
+        if (chargingChanged) {
+            batteryTransitionStartedAt = SystemClock.uptimeMillis();
+            removeCallbacks(batteryAnimationTicker);
+            post(batteryAnimationTicker);
+        }
         invalidate();
     }
 
@@ -108,6 +129,7 @@ public class HomePanelView extends View {
     protected void onDetachedFromWindow() {
         removeCallbacks(ticker);
         removeCallbacks(resetRightPage);
+        removeCallbacks(batteryAnimationTicker);
         super.onDetachedFromWindow();
     }
 
@@ -377,24 +399,53 @@ public class HomePanelView extends View {
     private void drawBattery(Canvas canvas, float x, float y, float w) {
         if (batteryLevel < 0) return;
 
+        boolean lowBattery = !batteryCharging && batteryLevel <= LOW_BATTERY_PERCENT;
         String right = batteryCharging ? "充电中" : "未充电";
         drawText(canvas, "电量 " + batteryLevel + "%", x, y, dp(12), Color.argb(188, 224, 242, 235), Paint.Align.LEFT, false);
-        drawText(canvas, right, x + w, y, dp(12), Color.argb(188, 224, 242, 235), Paint.Align.RIGHT, false);
+        int statusColor = batteryCharging
+            ? Color.rgb(135, 235, 155)
+            : lowBattery ? Color.rgb(255, 174, 92) : Color.rgb(172, 190, 255);
+        drawText(canvas, right, x + w, y, dp(12), statusColor, Paint.Align.RIGHT, false);
 
         float barY = y + dp(17);
+        float barStart = x + dp(4);
+        float barEnd = x + w - dp(4);
+        float fillEnd = barStart + (barEnd - barStart) * Math.max(0, Math.min(100, batteryLevel)) / 100f;
+        int trackColor = batteryCharging
+            ? Color.argb(58, 120, 245, 145)
+            : lowBattery ? Color.argb(62, 255, 145, 80) : Color.argb(56, 150, 170, 255);
+        int start = batteryCharging
+            ? Color.rgb(79, 224, 120)
+            : lowBattery ? Color.rgb(255, 164, 70) : Color.rgb(103, 132, 255);
+        int end = batteryCharging
+            ? Color.rgb(174, 246, 115)
+            : lowBattery ? Color.rgb(255, 94, 72) : Color.rgb(176, 204, 255);
+
         paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(dp(8));
         paint.setStrokeCap(Paint.Cap.ROUND);
-        paint.setColor(Color.argb(48, 255, 255, 255));
-        canvas.drawLine(x + dp(4), barY, x + w - dp(4), barY, paint);
-        int start = batteryCharging ? Color.rgb(130, 237, 168) : Color.rgb(95, 178, 255);
-        int end = batteryCharging ? Color.rgb(238, 252, 116) : Color.rgb(80, 224, 206);
-        float fillEnd = x + dp(4) + (w - dp(8)) * Math.max(0, Math.min(100, batteryLevel)) / 100f;
+
+        float transitionPulse = batteryTransitionPulse();
+        if (transitionPulse > 0f) {
+            paint.setStrokeWidth(dp(10) + dp(8) * transitionPulse);
+            paint.setColor(Color.argb(Math.round(96 * transitionPulse), Color.red(statusColor), Color.green(statusColor), Color.blue(statusColor)));
+            canvas.drawLine(barStart, barY, fillEnd, barY, paint);
+        }
+
+        paint.setStrokeWidth(dp(8));
+        paint.setColor(trackColor);
+        canvas.drawLine(barStart, barY, barEnd, barY, paint);
         paint.setShader(new LinearGradient(x, barY, x + w, barY, start, end, Shader.TileMode.CLAMP));
-        canvas.drawLine(x + dp(4), barY, fillEnd, barY, paint);
+        canvas.drawLine(barStart, barY, fillEnd, barY, paint);
         paint.setShader(null);
         paint.setStrokeCap(Paint.Cap.BUTT);
         paint.setStyle(Paint.Style.FILL);
+    }
+
+    private float batteryTransitionPulse() {
+        long elapsed = SystemClock.uptimeMillis() - batteryTransitionStartedAt;
+        if (elapsed < 0L || elapsed >= BATTERY_TRANSITION_MS) return 0f;
+        float progress = elapsed / (float) BATTERY_TRANSITION_MS;
+        return (float) Math.sin(progress * Math.PI);
     }
 
     private void drawClockPanel(Canvas canvas, float x, float y, float w, float h) {
