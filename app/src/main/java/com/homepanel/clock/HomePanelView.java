@@ -8,6 +8,7 @@ import android.graphics.Paint;
 import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
+import android.graphics.Typeface;
 import android.location.Location;
 import android.os.SystemClock;
 import android.view.MotionEvent;
@@ -26,12 +27,16 @@ public class HomePanelView extends View {
     private static final int RIGHT_PAGE_COUNT = 3;
     private static final long RIGHT_PAGE_ANIMATION_MS = 260L;
     private static final long CLOCK_FRAME_MS = 33L;
+    private static final long SIMPLE_MODE_ANIMATION_MS = 320L;
+    private static final boolean WEATHER_ICON_TEST_CYCLE = false;
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
     private final RectF bilibiliButtonRect = new RectF();
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy年M月d日 EEEE", Locale.CHINA);
     private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm", Locale.CHINA);
+    private final SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+    private final SimpleDateFormat simpleWeekdayFormat = new SimpleDateFormat("EEE", Locale.US);
     private final SimpleDateFormat updateFormat = new SimpleDateFormat("HH:mm", Locale.CHINA);
     private final float density;
 
@@ -42,6 +47,8 @@ public class HomePanelView extends View {
     private boolean locationPermissionMissing;
     private int batteryLevel = -1;
     private boolean batteryCharging;
+    private int previousBatteryLevel = -1;
+    private boolean previousBatteryCharging;
     private long batteryTransitionStartedAt = -BATTERY_TRANSITION_MS;
     private int rightPage;
     private float touchDownX;
@@ -53,7 +60,11 @@ public class HomePanelView extends View {
     private float rightPanelEndX;
     private float rightPageAnimationStart;
     private long rightPageAnimationStartedAt = -RIGHT_PAGE_ANIMATION_MS;
+    private boolean simpleMode;
+    private float simpleModeAnimationStart;
+    private long simpleModeAnimationStartedAt = -SIMPLE_MODE_ANIMATION_MS;
     private ActionListener actionListener;
+    private boolean compactWeatherIconStroke;
 
     private final Runnable ticker = new Runnable() {
         @Override
@@ -130,10 +141,14 @@ public class HomePanelView extends View {
     }
 
     public void setBattery(int level, boolean charging) {
-        boolean chargingChanged = batteryLevel >= 0 && batteryCharging != charging;
+        boolean batteryChanged = batteryLevel >= 0 && (batteryLevel != level || batteryCharging != charging);
+        if (batteryChanged) {
+            previousBatteryLevel = batteryLevel;
+            previousBatteryCharging = batteryCharging;
+        }
         this.batteryLevel = level;
         this.batteryCharging = charging;
-        if (chargingChanged) {
+        if (batteryChanged) {
             batteryTransitionStartedAt = SystemClock.uptimeMillis();
             removeCallbacks(batteryAnimationTicker);
             post(batteryAnimationTicker);
@@ -183,12 +198,68 @@ public class HomePanelView extends View {
         rightPanelStartX = rightX;
         rightPanelEndX = width - outer;
 
+        drawModeTransition(canvas, width, height, leftX, centerX, rightX, top, bottom, leftW, centerW, outer);
+    }
+
+    private void drawModeTransition(Canvas canvas, float width, float height, float leftX, float centerX, float rightX, float top, float bottom, float leftW, float centerW, float outer) {
+        long elapsed = SystemClock.uptimeMillis() - simpleModeAnimationStartedAt;
+        if (elapsed < 0L || elapsed >= SIMPLE_MODE_ANIMATION_MS) {
+            if (simpleMode) {
+                drawSimpleMode(canvas, outer, top, width - outer * 2f, bottom - top);
+            } else {
+                drawFullMode(canvas, leftX, centerX, rightX, top, bottom, leftW, centerW, outer);
+            }
+            return;
+        }
+
+        float phase = elapsed / (float) SIMPLE_MODE_ANIMATION_MS;
+        if (simpleMode) {
+            if (phase < 0.5f) {
+                drawFullModeAlpha(canvas, width, height, leftX, centerX, rightX, top, bottom, leftW, centerW, outer, 1f - phase * 2f);
+            } else {
+                drawSimpleModeAlpha(canvas, width, height, outer, top, width - outer * 2f, bottom - top, (phase - 0.5f) * 2f);
+            }
+        } else {
+            if (phase < 0.5f) {
+                drawSimpleModeAlpha(canvas, width, height, outer, top, width - outer * 2f, bottom - top, 1f - phase * 2f);
+            } else {
+                drawFullModeAlpha(canvas, width, height, leftX, centerX, rightX, top, bottom, leftW, centerW, outer, (phase - 0.5f) * 2f);
+            }
+        }
+    }
+
+    private void drawFullModeAlpha(Canvas canvas, float width, float height, float leftX, float centerX, float rightX, float top, float bottom, float leftW, float centerW, float outer, float alpha) {
+        int save = canvas.saveLayerAlpha(0, 0, width, height, Math.round(255f * Math.max(0f, Math.min(1f, alpha))));
+        drawFullMode(canvas, leftX, centerX, rightX, top, bottom, leftW, centerW, outer);
+        canvas.restoreToCount(save);
+    }
+
+    private void drawSimpleModeAlpha(Canvas canvas, float width, float height, float x, float y, float w, float h, float alpha) {
+        int save = canvas.saveLayerAlpha(0, 0, width, height, Math.round(255f * Math.max(0f, Math.min(1f, alpha))));
+        drawSimpleMode(canvas, x, y, w, h);
+        canvas.restoreToCount(save);
+    }
+
+    private void drawFullMode(Canvas canvas, float leftX, float centerX, float rightX, float top, float bottom, float leftW, float centerW, float outer) {
         drawSeparator(canvas, centerX, top, bottom);
         drawSeparator(canvas, rightX, top, bottom);
 
         drawWeatherPanel(canvas, leftX, top, leftW, bottom - top);
         drawClockPanel(canvas, centerX, top, centerW, bottom - top);
-        drawAnimatedRightPanel(canvas, rightX, top, width - rightX - outer, bottom - top);
+        drawAnimatedRightPanel(canvas, rightX, top, getWidth() - rightX - outer, bottom - top);
+    }
+
+    private void drawSimpleMode(Canvas canvas, float x, float y, float w, float h) {
+        float inset = Math.max(dp(34), w * 0.045f);
+        float contentX = x + inset;
+        float contentW = w - inset * 2f;
+        float gap = dp(28);
+        float leftW = contentW * 0.48f;
+        float rightX = contentX + leftW + gap;
+        float rightW = contentW - leftW - gap;
+
+        drawSimpleClockPanel(canvas, contentX, y, leftW, h);
+        drawSimpleTomorrowPanel(canvas, rightX, y, rightW, h);
     }
 
     @Override
@@ -196,21 +267,22 @@ public class HomePanelView extends View {
         if (event.getAction() == MotionEvent.ACTION_DOWN) {
             touchDownX = event.getX();
             touchDownY = event.getY();
-            rightTouchActive = isInRightPanel(touchDownX);
+            rightTouchActive = !simpleMode && isInRightPanel(touchDownX);
             rightDragging = false;
             rightDragOffsetPx = 0f;
             if (rightTouchActive) {
                 removeCallbacks(rightPageAnimationTicker);
                 rightPageAnimationStartedAt = -RIGHT_PAGE_ANIMATION_MS;
             }
-            return rightTouchActive;
+            return true;
         }
 
         if (event.getAction() == MotionEvent.ACTION_MOVE) {
-            if (!rightTouchActive) return false;
-
             float dx = event.getX() - touchDownX;
             float dy = event.getY() - touchDownY;
+            if (!rightTouchActive) {
+                return true;
+            }
             if (!rightDragging && Math.abs(dx) > dp(8) && Math.abs(dx) > Math.abs(dy)) {
                 rightDragging = true;
                 removeCallbacks(resetRightPage);
@@ -223,24 +295,27 @@ public class HomePanelView extends View {
         }
 
         if (event.getAction() == MotionEvent.ACTION_UP) {
-            if (!rightTouchActive || !isInRightPanel(touchDownX)) return false;
-            rightTouchActive = false;
             float dx = event.getX() - touchDownX;
             float dy = event.getY() - touchDownY;
-            if (rightDragging || (Math.abs(dx) > dp(36) && Math.abs(dx) > Math.abs(dy))) {
+            boolean tap = Math.abs(dx) < dp(12) && Math.abs(dy) < dp(12);
+            if (rightTouchActive && (rightDragging || (Math.abs(dx) > dp(36) && Math.abs(dx) > Math.abs(dy)))) {
                 settleRightDrag(dx);
                 removeCallbacks(resetRightPage);
                 postDelayed(resetRightPage, PAGE_RESET_MS);
-            } else if (Math.abs(dx) < dp(12) && Math.abs(dy) < dp(12)) {
-                handleRightPanelTap(event.getX(), event.getY());
+            } else if (tap) {
+                boolean handled = rightTouchActive && handleRightPanelTap(event.getX(), event.getY());
+                if (!handled) {
+                    toggleSimpleMode();
+                }
             }
+            rightTouchActive = false;
             rightDragging = false;
             rightDragOffsetPx = 0f;
             return true;
         }
 
         if (event.getAction() == MotionEvent.ACTION_CANCEL) {
-            if (!rightTouchActive) return false;
+            if (!rightTouchActive) return true;
             rightTouchActive = false;
             rightDragging = false;
             animateRightPageTo(rightPage, displayedRightPage());
@@ -249,6 +324,25 @@ public class HomePanelView extends View {
         }
 
         return true;
+    }
+
+    private void toggleSimpleMode() {
+        simpleModeAnimationStart = simpleModeProgress();
+        simpleMode = !simpleMode;
+        simpleModeAnimationStartedAt = SystemClock.uptimeMillis();
+        rightDragging = false;
+        rightDragOffsetPx = 0f;
+        invalidate();
+    }
+
+    private float simpleModeProgress() {
+        float target = simpleMode ? 1f : 0f;
+        long elapsed = SystemClock.uptimeMillis() - simpleModeAnimationStartedAt;
+        if (elapsed < 0L || elapsed >= SIMPLE_MODE_ANIMATION_MS) return target;
+
+        float t = elapsed / (float) SIMPLE_MODE_ANIMATION_MS;
+        float eased = 1f - (1f - t) * (1f - t) * (1f - t);
+        return simpleModeAnimationStart + (target - simpleModeAnimationStart) * eased;
     }
 
     private boolean isInRightPanel(float x) {
@@ -302,10 +396,12 @@ public class HomePanelView extends View {
         invalidate();
     }
 
-    private void handleRightPanelTap(float x, float y) {
+    private boolean handleRightPanelTap(float x, float y) {
         if (rightPage == 1 && bilibiliButtonRect.contains(x, y) && actionListener != null) {
             actionListener.onOpenBilibili();
+            return true;
         }
+        return false;
     }
 
     private float displayedRightPage() {
@@ -368,8 +464,8 @@ public class HomePanelView extends View {
             return;
         }
 
-        String icon = weatherIcon(weather.currentCode);
-        drawCircleBadge(canvas, x + pad + dp(25), y + dp(92), dp(28), icon, dp(24));
+        drawCircleBadge(canvas, x + pad + dp(25), y + dp(92), dp(28), "", dp(24));
+        drawCyclingColorWeatherIcon(canvas, x + pad + dp(25), y + dp(92), dp(46), weather.currentCode);
         drawFittedText(canvas, weather.currentDescription,
             x + pad + dp(25),
             y + dp(142),
@@ -444,7 +540,7 @@ public class HomePanelView extends View {
             float barY = rowY + rowH * 0.50f;
 
             drawText(canvas, label, x, baseline, dp(12), Color.argb(190, 224, 242, 235), Paint.Align.LEFT, false);
-            drawText(canvas, day.icon, x + dp(44), baseline, dp(12), Color.argb(210, 224, 242, 235), Paint.Align.CENTER, false);
+            drawCyclingColorWeatherIcon(canvas, x + dp(44), baseline - dp(4), dp(19), day.code, true);
 
             float lowX = x + w * 0.40f;
             float highX = x + w;
@@ -530,6 +626,70 @@ public class HomePanelView extends View {
         paint.setStyle(Paint.Style.FILL);
     }
 
+    private void drawCompactBattery(Canvas canvas, float cx, float baseline) {
+        if (batteryLevel < 0) return;
+
+        float progress = batteryTransitionProgress();
+        if (previousBatteryLevel >= 0 && progress < 0.5f) {
+            drawCompactBatteryState(canvas, cx, baseline, previousBatteryLevel, previousBatteryCharging, 1f - progress * 2f);
+            return;
+        }
+        if (previousBatteryLevel >= 0 && progress < 1f) {
+            drawCompactBatteryState(canvas, cx, baseline, batteryLevel, batteryCharging, (progress - 0.5f) * 2f);
+            return;
+        }
+        drawCompactBatteryState(canvas, cx, baseline, batteryLevel, batteryCharging, 1f);
+    }
+
+    private void drawCompactBatteryState(Canvas canvas, float cx, float baseline, int level, boolean charging, float alpha) {
+        if (level < 0 || alpha <= 0f) return;
+
+        boolean lowBattery = !charging && level <= LOW_BATTERY_PERCENT;
+        int baseColor = charging
+            ? Color.rgb(135, 235, 155)
+            : lowBattery ? Color.rgb(255, 164, 70) : Color.rgb(248, 248, 250);
+        int color = alphaColor(baseColor, Math.round((charging || lowBattery ? 230 : 205) * alpha));
+        float iconW = dp(34);
+        float iconH = dp(17);
+        float textSize = dp(17);
+        String percent = level + "%";
+        paint.setTextSize(textSize);
+        paint.setFakeBoldText(true);
+        float textW = paint.measureText(percent);
+        paint.setFakeBoldText(false);
+        float lightningW = charging ? dp(18) : 0f;
+        float totalW = iconW + dp(10) + textW + lightningW;
+        float iconX = cx - totalW * 0.5f;
+        float iconY = baseline - iconH;
+
+        rect.set(iconX, iconY, iconX + iconW, iconY + iconH);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(1.6f));
+        paint.setColor(color);
+        canvas.drawRoundRect(rect, dp(4), dp(4), paint);
+        paint.setStyle(Paint.Style.FILL);
+        rect.set(iconX + iconW + dp(2), iconY + dp(5), iconX + iconW + dp(5), iconY + iconH - dp(5));
+        canvas.drawRoundRect(rect, dp(1.5f), dp(1.5f), paint);
+
+        float fillW = (iconW - dp(7)) * Math.max(0, Math.min(100, level)) / 100f;
+        rect.set(iconX + dp(3.5f), iconY + dp(3.5f), iconX + dp(3.5f) + fillW, iconY + iconH - dp(3.5f));
+        paint.setColor(alphaColor(baseColor, Math.round((charging || lowBattery ? 170 : 120) * alpha)));
+        canvas.drawRoundRect(rect, dp(2.5f), dp(2.5f), paint);
+
+        float textX = iconX + iconW + dp(10);
+        drawText(canvas, percent, textX, baseline, textSize, color, Paint.Align.LEFT, true);
+        if (charging) {
+            drawText(canvas, "⚡", textX + textW + dp(4), baseline, dp(16), color, Paint.Align.LEFT, true);
+        }
+    }
+
+    private float batteryTransitionProgress() {
+        long elapsed = SystemClock.uptimeMillis() - batteryTransitionStartedAt;
+        if (elapsed < 0L || elapsed >= BATTERY_TRANSITION_MS) return 1f;
+        float t = elapsed / (float) BATTERY_TRANSITION_MS;
+        return 1f - (1f - t) * (1f - t);
+    }
+
     private float batteryTransitionPulse() {
         long elapsed = SystemClock.uptimeMillis() - batteryTransitionStartedAt;
         if (elapsed < 0L || elapsed >= BATTERY_TRANSITION_MS) return 0f;
@@ -539,11 +699,591 @@ public class HomePanelView extends View {
 
     private void drawClockPanel(Canvas canvas, float x, float y, float w, float h) {
         Calendar now = Calendar.getInstance(Locale.CHINA);
-        long nowMillis = System.currentTimeMillis();
-        now.setTimeInMillis(nowMillis);
         float cx = x + w * 0.5f;
         float radius = Math.min(w * 0.37f, h * 0.36f);
         float cy = y + Math.max(radius + dp(12), h * 0.36f);
+
+        drawAnalogClock(canvas, cx, cy, radius);
+
+        drawText(canvas, dateFormat.format(now.getTime()), cx, y + h - dp(88), dp(18), Color.argb(190, 224, 242, 235), Paint.Align.CENTER, true);
+        drawText(canvas, timeFormat.format(now.getTime()), cx, y + h - dp(22), scaleText(h, 56, 74), Color.rgb(238, 250, 246), Paint.Align.CENTER, true);
+    }
+
+    private void drawSimpleClockPanel(Canvas canvas, float x, float y, float w, float h) {
+        float cx = x + w * 0.5f;
+        float batteryH = batteryLevel >= 0 ? dp(48) : 0f;
+        float radius = Math.min(w * 0.42f, (h - batteryH - dp(28)) * 0.43f);
+        float cy = y + (h - batteryH) * 0.5f;
+        drawAnalogClock(canvas, cx, cy, radius);
+        if (batteryLevel >= 0) {
+            drawCompactBattery(canvas, cx, y + h - dp(28));
+        }
+    }
+
+    private void drawSimpleTomorrowPanel(Canvas canvas, float x, float y, float w, float h) {
+        WeatherDay tomorrow = weather != null && weather.days.size() > 1 ? weather.days.get(1) : null;
+        float cx = x + w * 0.5f;
+        Calendar now = Calendar.getInstance(Locale.US);
+        float splitY = y + h * 0.55f;
+        int digitalColor = Color.argb(226, 248, 248, 250);
+        int weatherNumberColor = Color.argb(215, 248, 248, 250);
+        float weatherNumberSize = dp(31);
+
+        drawText(canvas, timeFormat.format(now.getTime()), cx, y + h * 0.39f, scaleText(h, 78, 104), digitalColor, Paint.Align.CENTER, true);
+        String dateLine = simpleDateFormat.format(now.getTime()) + "  " + simpleWeekdayFormat.format(now.getTime()).toUpperCase(Locale.US);
+        drawText(canvas, dateLine, cx, y + h * 0.48f, dp(19), Color.argb(175, 248, 248, 250), Paint.Align.CENTER, false);
+
+        if (tomorrow == null) {
+            drawText(canvas, weatherStatus == null || weatherStatus.isEmpty() ? "等待天气数据" : weatherStatus,
+                cx,
+                splitY + (y + h - splitY) * 0.5f,
+                dp(22),
+                Color.rgb(248, 248, 250),
+                Paint.Align.CENTER,
+                true
+            );
+            return;
+        }
+
+        float weatherCenterY = splitY + (y + h - splitY) * 0.27f;
+        drawItalicText(canvas, "TOMORROW WEATHER", cx, weatherCenterY - dp(27), dp(11), Color.argb(78, 248, 248, 250), Paint.Align.CENTER, true);
+        drawCyclingColorWeatherIcon(canvas, x + w * 0.16f, weatherCenterY, dp(46), tomorrow.code);
+        drawCenteredText(canvas, tomorrow.high + "°", x + w * 0.35f, weatherCenterY, weatherNumberSize, weatherNumberColor, true);
+        drawCenteredText(canvas, tomorrow.low + "°", x + w * 0.52f, weatherCenterY, weatherNumberSize, weatherNumberColor, true);
+        drawSimpleRainIcon(canvas, x + w * 0.70f, weatherCenterY, dp(25), Color.argb(205, 248, 248, 250));
+        drawCenteredText(canvas, tomorrow.precipitation + "%", x + w * 0.84f, weatherCenterY, weatherNumberSize, weatherNumberColor, true);
+    }
+
+    private void drawSimpleWeatherIcon(Canvas canvas, float cx, float cy, float size, int code) {
+        if (code == 0) {
+            drawSimpleSunIcon(canvas, cx, cy, size);
+        } else if (code == 1) {
+            drawSimplePartlyCloudyIcon(canvas, cx, cy, size);
+        } else if (code == 2) {
+            drawSimpleMostlyCloudyIcon(canvas, cx, cy, size);
+        } else if (code >= 51 && code <= 67 || code >= 80 && code <= 82 || code >= 95 && code < 200) {
+            if (code >= 95 && code < 200) {
+                drawSimpleThunderIcon(canvas, cx, cy, size);
+            } else {
+                drawSimpleRainCloudIcon(canvas, cx, cy, size);
+            }
+        } else if (code >= 71 && code <= 77 || code >= 85 && code <= 86) {
+            drawSimpleSnowIcon(canvas, cx, cy, size);
+        } else if (code == 45 || code == 48) {
+            drawSimpleFogIcon(canvas, cx, cy, size);
+        } else if (code == 451) {
+            drawSimpleHazeIcon(canvas, cx, cy, size);
+        } else {
+            drawSimpleCloudIcon(canvas, cx, cy, size);
+        }
+    }
+
+    private void drawCyclingSimpleWeatherIcon(Canvas canvas, float cx, float cy, float size) {
+        int[] codes = { 0, 1, 2, 3, 61, 95, 71, 45, 451 };
+        long cycleMs = 2_200L;
+        long now = SystemClock.uptimeMillis();
+        int index = (int) ((now / cycleMs) % codes.length);
+        int nextIndex = (index + 1) % codes.length;
+        float t = (now % cycleMs) / (float) cycleMs;
+        float fadeWindow = 0.28f;
+
+        if (t > 1f - fadeWindow) {
+            float fade = (t - (1f - fadeWindow)) / fadeWindow;
+            int save = canvas.saveLayerAlpha(cx - size, cy - size, cx + size, cy + size, Math.round(255f * (1f - fade)));
+            drawSimpleWeatherIcon(canvas, cx, cy, size, codes[index]);
+            canvas.restoreToCount(save);
+
+            save = canvas.saveLayerAlpha(cx - size, cy - size, cx + size, cy + size, Math.round(255f * fade));
+            drawSimpleWeatherIcon(canvas, cx, cy, size, codes[nextIndex]);
+            canvas.restoreToCount(save);
+        } else {
+            drawSimpleWeatherIcon(canvas, cx, cy, size, codes[index]);
+        }
+    }
+
+    private void drawCyclingColorWeatherIcon(Canvas canvas, float cx, float cy, float size, int actualCode) {
+        drawCyclingColorWeatherIcon(canvas, cx, cy, size, actualCode, false);
+    }
+
+    private void drawCyclingColorWeatherIcon(Canvas canvas, float cx, float cy, float size, int actualCode, boolean compactStroke) {
+        int[] codes = { 0, 1, 2, 3, 61, 95, 71, 45, 451 };
+        int[] accents = {
+            Color.rgb(255, 197, 82),
+            Color.rgb(255, 214, 112),
+            Color.rgb(169, 214, 238),
+            Color.rgb(206, 216, 226),
+            Color.rgb(108, 214, 198),
+            Color.rgb(255, 185, 82),
+            Color.rgb(172, 212, 255),
+            Color.rgb(190, 198, 205),
+            Color.rgb(176, 186, 178)
+        };
+
+        if (!WEATHER_ICON_TEST_CYCLE) {
+            compactWeatherIconStroke = compactStroke;
+            drawColorWeatherIcon(canvas, cx, cy, size, actualCode, colorForWeatherCode(actualCode));
+            compactWeatherIconStroke = false;
+            return;
+        }
+
+        long cycleMs = 2_200L;
+        long now = SystemClock.uptimeMillis();
+        int index = (int) ((now / cycleMs) % codes.length);
+        int nextIndex = (index + 1) % codes.length;
+        float t = (now % cycleMs) / (float) cycleMs;
+        float fadeWindow = 0.28f;
+
+        if (t > 1f - fadeWindow) {
+            float fade = (t - (1f - fadeWindow)) / fadeWindow;
+            int save = canvas.saveLayerAlpha(cx - size, cy - size, cx + size, cy + size, Math.round(255f * (1f - fade)));
+            compactWeatherIconStroke = compactStroke;
+            drawColorWeatherIcon(canvas, cx, cy, size, codes[index], accents[index]);
+            compactWeatherIconStroke = false;
+            canvas.restoreToCount(save);
+
+            save = canvas.saveLayerAlpha(cx - size, cy - size, cx + size, cy + size, Math.round(255f * fade));
+            compactWeatherIconStroke = compactStroke;
+            drawColorWeatherIcon(canvas, cx, cy, size, codes[nextIndex], accents[nextIndex]);
+            compactWeatherIconStroke = false;
+            canvas.restoreToCount(save);
+        } else {
+            compactWeatherIconStroke = compactStroke;
+            drawColorWeatherIcon(canvas, cx, cy, size, codes[index], accents[index]);
+            compactWeatherIconStroke = false;
+        }
+    }
+
+    private int colorForWeatherCode(int code) {
+        if (code == 0 || code == 1) return Color.rgb(255, 197, 82);
+        if (code == 2) return Color.rgb(169, 214, 238);
+        if (code >= 51 && code <= 67 || code >= 80 && code <= 82) return Color.rgb(108, 214, 198);
+        if (code >= 95 && code < 200) return Color.rgb(255, 185, 82);
+        if (code >= 71 && code <= 77 || code >= 85 && code <= 86) return Color.rgb(172, 212, 255);
+        if (code == 45 || code == 48) return Color.rgb(190, 198, 205);
+        if (code == 451) return Color.rgb(176, 186, 178);
+        return Color.rgb(206, 216, 226);
+    }
+
+    private void drawColorWeatherIcon(Canvas canvas, float cx, float cy, float size, int code, int accent) {
+        if (code == 0) {
+            drawColorSunIcon(canvas, cx, cy, size, accent);
+        } else if (code == 1) {
+            drawColorPartlyCloudyIcon(canvas, cx, cy, size, accent);
+        } else if (code == 2) {
+            drawColorMostlyCloudyIcon(canvas, cx, cy, size, accent);
+        } else if (code >= 95 && code < 200) {
+            drawColorThunderIcon(canvas, cx, cy, size, accent);
+        } else if (code >= 51 && code <= 67 || code >= 80 && code <= 82) {
+            drawColorRainCloudIcon(canvas, cx, cy, size, accent);
+        } else if (code >= 71 && code <= 77 || code >= 85 && code <= 86) {
+            drawColorSnowIcon(canvas, cx, cy, size, accent);
+        } else if (code == 45 || code == 48) {
+            drawColorFogIcon(canvas, cx, cy, size, accent);
+        } else if (code == 451) {
+            drawColorHazeIcon(canvas, cx, cy, size, accent);
+        } else {
+            drawColorCloudIcon(canvas, cx, cy, size, accent);
+        }
+    }
+
+    private void drawColorSunIcon(Canvas canvas, float cx, float cy, float size, int accent) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(weatherIconStroke(2.4f));
+        paint.setColor(Color.argb(235, Color.red(accent), Color.green(accent), Color.blue(accent)));
+        canvas.drawCircle(cx, cy, size * 0.18f, paint);
+        for (int i = 0; i < 8; i++) {
+            double angle = Math.toRadians(i * 45);
+            canvas.drawLine(
+                cx + (float) Math.cos(angle) * size * 0.29f,
+                cy + (float) Math.sin(angle) * size * 0.29f,
+                cx + (float) Math.cos(angle) * size * 0.43f,
+                cy + (float) Math.sin(angle) * size * 0.43f,
+                paint
+            );
+        }
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawColorPartialSunIcon(Canvas canvas, float cx, float cy, float size, int accent) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(weatherIconStroke(2.4f));
+        paint.setColor(Color.argb(235, Color.red(accent), Color.green(accent), Color.blue(accent)));
+        canvas.drawCircle(cx, cy, size * 0.18f, paint);
+        int[] rayAngles = { 180, 225, 270, 315 };
+        for (int angleDeg : rayAngles) {
+            double angle = Math.toRadians(angleDeg);
+            canvas.drawLine(
+                cx + (float) Math.cos(angle) * size * 0.29f,
+                cy + (float) Math.sin(angle) * size * 0.29f,
+                cx + (float) Math.cos(angle) * size * 0.43f,
+                cy + (float) Math.sin(angle) * size * 0.43f,
+                paint
+            );
+        }
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawColorCloudIcon(Canvas canvas, float cx, float cy, float size, int accent) {
+        drawCloudShape(canvas, cx, cy, size, Color.argb(218, Color.red(accent), Color.green(accent), Color.blue(accent)), weatherIconStroke(2.7f));
+    }
+
+    private void drawColorPartlyCloudyIcon(Canvas canvas, float cx, float cy, float size, int accent) {
+        drawColorPartialSunIcon(canvas, cx - size * 0.18f, cy - size * 0.16f, size * 0.68f, accent);
+        drawSimpleCloudMask(canvas, cx + size * 0.05f, cy + size * 0.05f, size * 0.90f);
+        drawColorCloudIcon(canvas, cx + size * 0.05f, cy + size * 0.05f, size * 0.84f, Color.rgb(192, 220, 232));
+    }
+
+    private void drawColorMostlyCloudyIcon(Canvas canvas, float cx, float cy, float size, int accent) {
+        drawColorPartlyCloudyIcon(canvas, cx, cy - size * 0.03f, size * 0.92f, accent);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(weatherIconStroke(1.8f));
+        paint.setColor(Color.argb(128, Color.red(accent), Color.green(accent), Color.blue(accent)));
+        float lineY = cy + size * 0.24f;
+        canvas.drawLine(cx - size * 0.33f, lineY, cx - size * 0.07f, lineY, paint);
+        canvas.drawLine(cx + size * 0.08f, lineY, cx + size * 0.35f, lineY, paint);
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawColorRainCloudIcon(Canvas canvas, float cx, float cy, float size, int accent) {
+        drawColorCloudIcon(canvas, cx, cy - size * 0.08f, size, Color.rgb(178, 215, 230));
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(weatherIconStroke(2.1f));
+        paint.setColor(Color.argb(230, Color.red(accent), Color.green(accent), Color.blue(accent)));
+        for (int i = -1; i <= 1; i++) {
+            float dropX = cx + i * size * 0.16f;
+            canvas.drawLine(dropX + size * 0.04f, cy + size * 0.17f, dropX - size * 0.03f, cy + size * 0.35f, paint);
+        }
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawColorThunderIcon(Canvas canvas, float cx, float cy, float size, int accent) {
+        drawColorCloudIcon(canvas, cx, cy - size * 0.11f, size, Color.rgb(178, 215, 230));
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(weatherIconStroke(2.1f));
+        paint.setColor(Color.argb(230, 108, 214, 198));
+        for (int i = -1; i <= 1; i += 2) {
+            float dropX = cx + i * size * 0.16f;
+            canvas.drawLine(dropX + size * 0.04f, cy + size * 0.14f, dropX - size * 0.03f, cy + size * 0.32f, paint);
+        }
+
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(weatherIconStroke(2.3f));
+        paint.setColor(Color.argb(235, Color.red(accent), Color.green(accent), Color.blue(accent)));
+        android.graphics.Path bolt = new android.graphics.Path();
+        bolt.moveTo(cx + size * 0.05f, cy + size * 0.02f);
+        bolt.lineTo(cx - size * 0.07f, cy + size * 0.28f);
+        bolt.lineTo(cx + size * 0.08f, cy + size * 0.25f);
+        bolt.lineTo(cx - size * 0.02f, cy + size * 0.48f);
+        canvas.drawPath(bolt, paint);
+        paint.setStrokeJoin(Paint.Join.MITER);
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawColorSnowIcon(Canvas canvas, float cx, float cy, float size, int accent) {
+        drawSnowflake(canvas, cx, cy, size, Color.argb(230, Color.red(accent), Color.green(accent), Color.blue(accent)));
+    }
+
+    private void drawColorFogIcon(Canvas canvas, float cx, float cy, float size, int accent) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(weatherIconStroke(2.4f));
+        paint.setColor(Color.argb(190, Color.red(accent), Color.green(accent), Color.blue(accent)));
+        for (int i = -1; i <= 1; i++) {
+            float y = cy + i * size * 0.16f;
+            canvas.drawLine(cx - size * 0.36f, y, cx + size * 0.36f, y, paint);
+        }
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawColorHazeIcon(Canvas canvas, float cx, float cy, float size, int accent) {
+        drawHazeShape(canvas, cx, cy, size, Color.argb(175, Color.red(accent), Color.green(accent), Color.blue(accent)));
+    }
+
+    private float weatherIconStroke(float normalDp) {
+        return dp(compactWeatherIconStroke ? Math.max(1.35f, normalDp * 0.74f) : normalDp);
+    }
+
+    private void drawSimpleSunIcon(Canvas canvas, float cx, float cy, float size) {
+        int color = Color.argb(218, 248, 248, 250);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(dp(2.2f));
+        paint.setColor(color);
+        canvas.drawCircle(cx, cy, size * 0.18f, paint);
+        for (int i = 0; i < 8; i++) {
+            double angle = Math.toRadians(i * 45);
+            float inner = size * 0.29f;
+            float outer = size * 0.43f;
+            canvas.drawLine(
+                cx + (float) Math.cos(angle) * inner,
+                cy + (float) Math.sin(angle) * inner,
+                cx + (float) Math.cos(angle) * outer,
+                cy + (float) Math.sin(angle) * outer,
+                paint
+            );
+        }
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawSimpleCloudIcon(Canvas canvas, float cx, float cy, float size) {
+        drawCloudShape(canvas, cx, cy, size, Color.argb(205, 248, 248, 250), dp(2.6f));
+    }
+
+    private void drawCloudShape(Canvas canvas, float cx, float cy, float size, int color, float strokeWidth) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        paint.setStrokeWidth(strokeWidth);
+        paint.setColor(color);
+        float baseY = cy + size * 0.12f;
+        canvas.drawArc(cx - size * 0.42f, baseY - size * 0.28f, cx - size * 0.12f, baseY + size * 0.02f, 185, 150, false, paint);
+        canvas.drawArc(cx - size * 0.25f, baseY - size * 0.48f, cx + size * 0.18f, baseY - size * 0.05f, 196, 170, false, paint);
+        canvas.drawArc(cx + size * 0.03f, baseY - size * 0.34f, cx + size * 0.42f, baseY + size * 0.05f, 218, 132, false, paint);
+        canvas.drawLine(cx - size * 0.34f, baseY, cx + size * 0.34f, baseY, paint);
+        paint.setStrokeJoin(Paint.Join.MITER);
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawSimplePartlyCloudyIcon(Canvas canvas, float cx, float cy, float size) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(weatherIconStroke(2f));
+        paint.setColor(Color.argb(175, 248, 248, 250));
+        float sunCx = cx - size * 0.18f;
+        float sunCy = cy - size * 0.16f;
+        canvas.drawCircle(sunCx, sunCy, size * 0.15f, paint);
+        int[] rayAngles = { 180, 225, 270, 315 };
+        for (int angleDeg : rayAngles) {
+            double angle = Math.toRadians(angleDeg);
+            float inner = size * 0.23f;
+            float outer = size * 0.34f;
+            canvas.drawLine(
+                sunCx + (float) Math.cos(angle) * inner,
+                sunCy + (float) Math.sin(angle) * inner,
+                sunCx + (float) Math.cos(angle) * outer,
+                sunCy + (float) Math.sin(angle) * outer,
+                paint
+            );
+        }
+
+        drawSimpleCloudMask(canvas, cx + size * 0.05f, cy + size * 0.05f, size * 0.90f);
+        drawSimpleCloudIcon(canvas, cx + size * 0.05f, cy + size * 0.05f, size * 0.84f);
+    }
+
+    private void drawSimpleMostlyCloudyIcon(Canvas canvas, float cx, float cy, float size) {
+        drawSimplePartlyCloudyIcon(canvas, cx, cy - size * 0.03f, size * 0.92f);
+        int color = Color.argb(150, 248, 248, 250);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(dp(1.8f));
+        paint.setColor(color);
+        float lineY = cy + size * 0.24f;
+        canvas.drawLine(cx - size * 0.33f, lineY, cx - size * 0.07f, lineY, paint);
+        canvas.drawLine(cx + size * 0.08f, lineY, cx + size * 0.35f, lineY, paint);
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawSimpleCloudMask(Canvas canvas, float cx, float cy, float size) {
+        float baseY = cy + size * 0.12f;
+        android.graphics.Path mask = new android.graphics.Path();
+        mask.moveTo(cx - size * 0.40f, baseY);
+        mask.cubicTo(cx - size * 0.47f, baseY - size * 0.16f, cx - size * 0.31f, baseY - size * 0.33f, cx - size * 0.17f, baseY - size * 0.25f);
+        mask.cubicTo(cx - size * 0.12f, baseY - size * 0.48f, cx + size * 0.20f, baseY - size * 0.52f, cx + size * 0.22f, baseY - size * 0.25f);
+        mask.cubicTo(cx + size * 0.44f, baseY - size * 0.25f, cx + size * 0.50f, baseY, cx + size * 0.34f, baseY);
+        mask.close();
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.BLACK);
+        canvas.drawPath(mask, paint);
+    }
+
+    private void drawSimpleRainCloudIcon(Canvas canvas, float cx, float cy, float size) {
+        drawSimpleCloudIcon(canvas, cx, cy - size * 0.08f, size);
+        int color = Color.argb(205, 248, 248, 250);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(dp(2.1f));
+        paint.setColor(color);
+        for (int i = -1; i <= 1; i++) {
+            float dropX = cx + i * size * 0.16f;
+            canvas.drawLine(dropX + size * 0.04f, cy + size * 0.17f, dropX - size * 0.03f, cy + size * 0.35f, paint);
+        }
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawSimpleThunderIcon(Canvas canvas, float cx, float cy, float size) {
+        drawSimpleRainCloudIcon(canvas, cx, cy - size * 0.03f, size);
+        int color = Color.argb(218, 248, 248, 250);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(dp(2.2f));
+        paint.setColor(color);
+        android.graphics.Path bolt = new android.graphics.Path();
+        bolt.moveTo(cx + size * 0.05f, cy + size * 0.02f);
+        bolt.lineTo(cx - size * 0.07f, cy + size * 0.28f);
+        bolt.lineTo(cx + size * 0.08f, cy + size * 0.25f);
+        bolt.lineTo(cx - size * 0.02f, cy + size * 0.48f);
+        canvas.drawPath(bolt, paint);
+        paint.setStrokeJoin(Paint.Join.MITER);
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawSimpleSnowIcon(Canvas canvas, float cx, float cy, float size) {
+        drawSnowflake(canvas, cx, cy, size, Color.argb(205, 248, 248, 250));
+    }
+
+    private void drawSnowflake(Canvas canvas, float cx, float cy, float size, int color) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(weatherIconStroke(2f));
+        paint.setColor(color);
+        float radius = size * 0.34f;
+        float branch = size * 0.10f;
+        for (int i = 0; i < 6; i++) {
+            double angle = Math.toRadians(i * 60 - 90);
+            float endX = cx + (float) Math.cos(angle) * radius;
+            float endY = cy + (float) Math.sin(angle) * radius;
+            canvas.drawLine(cx, cy, endX, endY, paint);
+
+            double left = angle + Math.toRadians(140);
+            double right = angle - Math.toRadians(140);
+            float jointX = cx + (float) Math.cos(angle) * radius * 0.62f;
+            float jointY = cy + (float) Math.sin(angle) * radius * 0.62f;
+            canvas.drawLine(jointX, jointY, jointX + (float) Math.cos(left) * branch, jointY + (float) Math.sin(left) * branch, paint);
+            canvas.drawLine(jointX, jointY, jointX + (float) Math.cos(right) * branch, jointY + (float) Math.sin(right) * branch, paint);
+        }
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.argb(120, 248, 248, 250));
+        canvas.drawCircle(cx, cy, dp(2.2f), paint);
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawSimpleFogIcon(Canvas canvas, float cx, float cy, float size) {
+        int color = Color.argb(190, 248, 248, 250);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(dp(2.4f));
+        paint.setColor(color);
+        for (int i = -1; i <= 1; i++) {
+            float y = cy + i * size * 0.16f;
+            canvas.drawLine(cx - size * 0.36f, y, cx + size * 0.36f, y, paint);
+        }
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawSimpleHazeIcon(Canvas canvas, float cx, float cy, float size) {
+        drawHazeShape(canvas, cx, cy, size, Color.argb(165, 248, 248, 250));
+    }
+
+    private void drawHazeShape(Canvas canvas, float cx, float cy, float size, int color) {
+        float[][] circles = {
+            { -0.26f, -0.17f, 0.055f },
+            { 0.03f, -0.11f, 0.045f },
+            { 0.29f, -0.19f, 0.050f },
+            { -0.10f, 0.09f, 0.050f },
+            { 0.21f, 0.12f, 0.042f },
+            { -0.32f, 0.22f, 0.040f }
+        };
+
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(weatherIconStroke(2f));
+        paint.setColor(color);
+        float[] ys = { -0.26f, -0.08f, 0.10f, 0.28f };
+        for (int i = 0; i < ys.length; i++) {
+            float lineY = cy + ys[i] * size;
+            float start = cx - size * (i % 2 == 0 ? 0.36f : 0.28f);
+            float end = cx + size * (i % 2 == 0 ? 0.34f : 0.38f);
+            drawHazeLineAvoidingCircles(canvas, start, end, lineY, cx, cy, size, circles);
+        }
+
+        paint.setStrokeWidth(weatherIconStroke(1.4f));
+        paint.setColor(Color.argb(108, 248, 248, 250));
+        for (float[] circle : circles) {
+            canvas.drawCircle(cx + circle[0] * size, cy + circle[1] * size, circle[2] * size, paint);
+        }
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawHazeLineAvoidingCircles(Canvas canvas, float start, float end, float y, float cx, float cy, float size, float[][] circles) {
+        float cursor = start;
+        for (float[] circle : circles) {
+            float circleX = cx + circle[0] * size;
+            float circleY = cy + circle[1] * size;
+            float radius = circle[2] * size + dp(3);
+            float dy = Math.abs(y - circleY);
+            if (dy >= radius || circleX + radius < start || circleX - radius > end) continue;
+
+            float half = (float) Math.sqrt(radius * radius - dy * dy);
+            float gapStart = Math.max(start, circleX - half);
+            float gapEnd = Math.min(end, circleX + half);
+            if (gapStart > cursor + dp(2)) {
+                canvas.drawLine(cursor, y, gapStart - dp(1), y, paint);
+            }
+            cursor = Math.max(cursor, gapEnd + dp(1));
+        }
+        if (cursor < end) {
+            canvas.drawLine(cursor, y, end, y, paint);
+        }
+    }
+
+    private void drawSimpleRainIcon(Canvas canvas, float cx, float cy, float size, int color) {
+        android.graphics.Path path = new android.graphics.Path();
+        path.moveTo(cx, cy - size * 0.42f);
+        path.cubicTo(cx + size * 0.28f, cy - size * 0.10f, cx + size * 0.38f, cy + size * 0.12f, cx + size * 0.23f, cy + size * 0.32f);
+        path.cubicTo(cx + size * 0.10f, cy + size * 0.48f, cx - size * 0.10f, cy + size * 0.48f, cx - size * 0.23f, cy + size * 0.32f);
+        path.cubicTo(cx - size * 0.38f, cy + size * 0.12f, cx - size * 0.28f, cy - size * 0.10f, cx, cy - size * 0.42f);
+        path.close();
+
+        int waterColor = Color.rgb(108, 214, 198);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.argb(46, Color.red(waterColor), Color.green(waterColor), Color.blue(waterColor)));
+        canvas.drawPath(path, paint);
+
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        paint.setStrokeWidth(dp(2.2f));
+        paint.setColor(Color.argb(230, Color.red(waterColor), Color.green(waterColor), Color.blue(waterColor)));
+        canvas.drawPath(path, paint);
+
+        android.graphics.Path highlight = new android.graphics.Path();
+        highlight.moveTo(cx - size * 0.08f, cy - size * 0.16f);
+        highlight.cubicTo(cx - size * 0.20f, cy + size * 0.02f, cx - size * 0.15f, cy + size * 0.18f, cx - size * 0.02f, cy + size * 0.25f);
+        paint.setStrokeWidth(dp(1.5f));
+        paint.setColor(Color.argb(155, 248, 248, 250));
+        canvas.drawPath(highlight, paint);
+
+        paint.setStrokeJoin(Paint.Join.MITER);
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawAnalogClock(Canvas canvas, float cx, float cy, float radius) {
+        Calendar now = Calendar.getInstance(Locale.CHINA);
+        long nowMillis = System.currentTimeMillis();
+        now.setTimeInMillis(nowMillis);
 
         drawAppleClockMarks(canvas, cx, cy, radius);
 
@@ -571,9 +1311,6 @@ public class HomePanelView extends View {
         canvas.drawCircle(cx, cy, dp(8), paint);
         paint.setColor(Color.rgb(20, 20, 20));
         canvas.drawCircle(cx, cy, dp(4.5f), paint);
-
-        drawText(canvas, dateFormat.format(now.getTime()), cx, y + h - dp(88), dp(18), Color.argb(190, 224, 242, 235), Paint.Align.CENTER, true);
-        drawText(canvas, timeFormat.format(now.getTime()), cx, y + h - dp(22), scaleText(h, 56, 74), Color.rgb(238, 250, 246), Paint.Align.CENTER, true);
     }
 
     private void drawAppleClockMarks(Canvas canvas, float cx, float cy, float radius) {
@@ -704,7 +1441,7 @@ public class HomePanelView extends View {
         }
 
         float headY = y + dp(38);
-        drawText(canvas, tomorrow.icon, x + dp(28), headY, dp(29), Color.rgb(255, 205, 94), Paint.Align.CENTER, false);
+        drawCyclingColorWeatherIcon(canvas, x + dp(28), headY - dp(3), dp(42), tomorrow.code);
         drawText(canvas, "明天", x + dp(58), headY - dp(4), dp(18), Color.WHITE, Paint.Align.LEFT, true);
         drawText(canvas, tomorrow.description, x + dp(58), headY + dp(16), dp(12), Color.argb(180, 224, 242, 235), Paint.Align.LEFT, false);
         drawText(canvas, tomorrow.high + "°/" + tomorrow.low + "°", x + w - dp(12), headY + dp(2), dp(22), Color.WHITE, Paint.Align.RIGHT, true);
@@ -743,6 +1480,13 @@ public class HomePanelView extends View {
         canvas.drawCircle(x + dp(10), y + dp(10), dp(9), paint);
         drawText(canvas, icon, x + dp(10), y + dp(14), dp(11), Color.rgb(255, 205, 94), Paint.Align.CENTER, true);
         drawMultilineEllipsizedText(canvas, text, x + dp(28), y + dp(14), dp(12.8f), Color.WHITE, w - dp(28), 2);
+    }
+
+    private void drawSimpleTip(Canvas canvas, float x, float y, float w, String icon, String text) {
+        paint.setColor(Color.argb(34, 255, 205, 94));
+        canvas.drawCircle(x + dp(9), y - dp(5), dp(9), paint);
+        drawText(canvas, icon, x + dp(9), y - dp(1), dp(11), Color.rgb(255, 205, 94), Paint.Align.CENTER, true);
+        drawMultilineEllipsizedText(canvas, text, x + dp(28), y, dp(13.5f), Color.argb(205, 248, 248, 250), w - dp(28), 1);
     }
 
     private void drawBilibiliPage(Canvas canvas, float x, float y, float w, float h) {
@@ -807,6 +1551,31 @@ public class HomePanelView extends View {
         paint.setTextAlign(align);
         paint.setFakeBoldText(bold);
         canvas.drawText(text == null ? "" : text, x, y, paint);
+        paint.setFakeBoldText(false);
+    }
+
+    private void drawItalicText(Canvas canvas, String text, float x, float y, float size, int color, Paint.Align align, boolean bold) {
+        paint.setShader(null);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(color);
+        paint.setTextSize(size);
+        paint.setTextAlign(align);
+        paint.setFakeBoldText(bold);
+        paint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.ITALIC));
+        canvas.drawText(text == null ? "" : text, x, y, paint);
+        paint.setTypeface(Typeface.DEFAULT);
+        paint.setFakeBoldText(false);
+    }
+
+    private void drawCenteredText(Canvas canvas, String text, float cx, float cy, float size, int color, boolean bold) {
+        paint.setShader(null);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(color);
+        paint.setTextSize(size);
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setFakeBoldText(bold);
+        Paint.FontMetrics metrics = paint.getFontMetrics();
+        canvas.drawText(text == null ? "" : text, cx, cy - (metrics.ascent + metrics.descent) * 0.5f, paint);
         paint.setFakeBoldText(false);
     }
 
@@ -952,6 +1721,10 @@ public class HomePanelView extends View {
 
     private float clamp(float value, float min, float max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private int alphaColor(int color, int alpha) {
+        return Color.argb(Math.max(0, Math.min(255, alpha)), Color.red(color), Color.green(color), Color.blue(color));
     }
 
     private float dp(float value) {

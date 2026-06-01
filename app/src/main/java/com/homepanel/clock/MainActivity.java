@@ -1040,7 +1040,8 @@ public class MainActivity extends Activity {
         if (code == 104 || code == 154) return 3;
         if (code >= 300 && code <= 399) return 61;
         if (code >= 400 && code <= 499) return 71;
-        if (code >= 500 && code <= 515) return 45;
+        if (code >= 500 && code <= 501) return 45;
+        if (code >= 502 && code <= 515) return 451;
         if (code >= 200 && code <= 213) return 2;
         if (code == 900) return 0;
         if (code == 901) return 3;
@@ -1137,7 +1138,8 @@ public class MainActivity extends Activity {
         if (text.contains("雷")) return 95;
         if (text.contains("雪")) return 71;
         if (text.contains("雨")) return 61;
-        if (text.contains("雾") || text.contains("霾")) return 45;
+        if (text.contains("霾")) return 451;
+        if (text.contains("雾")) return 45;
         if (text.contains("晴")) return 0;
         if (text.contains("云")) return 2;
         if (text.contains("阴")) return 3;
@@ -1156,6 +1158,7 @@ public class MainActivity extends Activity {
         if (code == 1 || code == 2) return "多云";
         if (code == 3) return "阴";
         if (code == 45 || code == 48) return "雾";
+        if (code == 451) return "霾";
         if (code >= 51 && code <= 57) return "毛毛雨";
         if (code >= 61 && code <= 67) return "雨";
         if (code >= 71 && code <= 77) return "雪";
@@ -1170,6 +1173,7 @@ public class MainActivity extends Activity {
         if (code == 1 || code == 2) return "◐";
         if (code == 3) return "☁";
         if (code == 45 || code == 48) return "≋";
+        if (code == 451) return "≋";
         if (code >= 51 && code <= 67) return "☔";
         if (code >= 71 && code <= 77) return "❄";
         if (code >= 80 && code <= 82) return "☔";
