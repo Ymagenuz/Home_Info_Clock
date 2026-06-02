@@ -24,6 +24,7 @@ public class HomePanelView extends View {
     private static final int PAGE_RESET_MS = 20_000;
     private static final int LOW_BATTERY_PERCENT = 20;
     private static final long BATTERY_TRANSITION_MS = 900L;
+    private static final int LEFT_PAGE_COUNT = 2;
     private static final int RIGHT_PAGE_COUNT = 3;
     private static final long RIGHT_PAGE_ANIMATION_MS = 260L;
     private static final long CLOCK_FRAME_MS = 33L;
@@ -50,6 +51,18 @@ public class HomePanelView extends View {
     private int previousBatteryLevel = -1;
     private boolean previousBatteryCharging;
     private long batteryTransitionStartedAt = -BATTERY_TRANSITION_MS;
+    private int leftPage;
+    private boolean leftTouchActive;
+    private boolean leftDragging;
+    private boolean leftVerticalDragging;
+    private float leftDragOffsetPx;
+    private float leftPanelStartX;
+    private float leftPanelEndX;
+    private float leftPageAnimationStart;
+    private long leftPageAnimationStartedAt = -RIGHT_PAGE_ANIMATION_MS;
+    private float leftTrendScrollY;
+    private float leftTrendMaxScroll;
+    private float leftLastTouchY;
     private int rightPage;
     private float touchDownX;
     private float touchDownY;
@@ -85,6 +98,17 @@ public class HomePanelView extends View {
         @Override
         public void run() {
             long elapsed = SystemClock.uptimeMillis() - rightPageAnimationStartedAt;
+            if (elapsed < RIGHT_PAGE_ANIMATION_MS) {
+                invalidate();
+                postDelayed(this, 16L);
+            }
+        }
+    };
+
+    private final Runnable leftPageAnimationTicker = new Runnable() {
+        @Override
+        public void run() {
+            long elapsed = SystemClock.uptimeMillis() - leftPageAnimationStartedAt;
             if (elapsed < RIGHT_PAGE_ANIMATION_MS) {
                 invalidate();
                 postDelayed(this, 16L);
@@ -168,6 +192,7 @@ public class HomePanelView extends View {
         removeCallbacks(ticker);
         removeCallbacks(resetRightPage);
         removeCallbacks(batteryAnimationTicker);
+        removeCallbacks(leftPageAnimationTicker);
         removeCallbacks(rightPageAnimationTicker);
         super.onDetachedFromWindow();
     }
@@ -195,6 +220,8 @@ public class HomePanelView extends View {
         float rightX = centerX + centerW;
         float top = outer;
         float bottom = height - outer;
+        leftPanelStartX = leftX;
+        leftPanelEndX = centerX;
         rightPanelStartX = rightX;
         rightPanelEndX = width - outer;
 
@@ -244,7 +271,7 @@ public class HomePanelView extends View {
         drawSeparator(canvas, centerX, top, bottom);
         drawSeparator(canvas, rightX, top, bottom);
 
-        drawWeatherPanel(canvas, leftX, top, leftW, bottom - top);
+        drawAnimatedWeatherPanel(canvas, leftX, top, leftW, bottom - top);
         drawClockPanel(canvas, centerX, top, centerW, bottom - top);
         drawAnimatedRightPanel(canvas, rightX, top, getWidth() - rightX - outer, bottom - top);
     }
@@ -267,9 +294,21 @@ public class HomePanelView extends View {
         if (event.getAction() == MotionEvent.ACTION_DOWN) {
             touchDownX = event.getX();
             touchDownY = event.getY();
+            leftLastTouchY = touchDownY;
+            leftTouchActive = !simpleMode && isInLeftPanel(touchDownX);
             rightTouchActive = !simpleMode && isInRightPanel(touchDownX);
+            if (leftTouchActive && rightTouchActive) {
+                rightTouchActive = false;
+            }
+            leftDragging = false;
+            leftVerticalDragging = false;
+            leftDragOffsetPx = 0f;
             rightDragging = false;
             rightDragOffsetPx = 0f;
+            if (leftTouchActive) {
+                removeCallbacks(leftPageAnimationTicker);
+                leftPageAnimationStartedAt = -RIGHT_PAGE_ANIMATION_MS;
+            }
             if (rightTouchActive) {
                 removeCallbacks(rightPageAnimationTicker);
                 rightPageAnimationStartedAt = -RIGHT_PAGE_ANIMATION_MS;
@@ -280,14 +319,32 @@ public class HomePanelView extends View {
         if (event.getAction() == MotionEvent.ACTION_MOVE) {
             float dx = event.getX() - touchDownX;
             float dy = event.getY() - touchDownY;
-            if (!rightTouchActive) {
+
+            if (leftTouchActive) {
+                if (!leftDragging && !leftVerticalDragging) {
+                    if (leftPage == 1 && Math.abs(dy) > dp(8) && Math.abs(dy) > Math.abs(dx)) {
+                        leftVerticalDragging = true;
+                    } else if (Math.abs(dx) > dp(8) && Math.abs(dx) > Math.abs(dy)) {
+                        leftDragging = true;
+                    }
+                }
+                if (leftDragging) {
+                    leftDragOffsetPx = resistedLeftDrag(dx);
+                    invalidate();
+                } else if (leftVerticalDragging) {
+                    float stepY = event.getY() - leftLastTouchY;
+                    leftTrendScrollY = clamp(leftTrendScrollY - stepY, 0f, leftTrendMaxScroll);
+                    leftLastTouchY = event.getY();
+                    invalidate();
+                }
                 return true;
             }
-            if (!rightDragging && Math.abs(dx) > dp(8) && Math.abs(dx) > Math.abs(dy)) {
+
+            if (rightTouchActive && !rightDragging && Math.abs(dx) > dp(8) && Math.abs(dx) > Math.abs(dy)) {
                 rightDragging = true;
                 removeCallbacks(resetRightPage);
             }
-            if (rightDragging) {
+            if (rightTouchActive && rightDragging) {
                 rightDragOffsetPx = resistedRightDrag(dx);
                 invalidate();
             }
@@ -298,6 +355,20 @@ public class HomePanelView extends View {
             float dx = event.getX() - touchDownX;
             float dy = event.getY() - touchDownY;
             boolean tap = Math.abs(dx) < dp(12) && Math.abs(dy) < dp(12);
+
+            if (leftTouchActive) {
+                if (leftDragging || (Math.abs(dx) > dp(36) && Math.abs(dx) > Math.abs(dy))) {
+                    settleLeftDrag(dx);
+                } else if (tap && !leftVerticalDragging) {
+                    toggleSimpleMode();
+                }
+                leftTouchActive = false;
+                leftDragging = false;
+                leftVerticalDragging = false;
+                leftDragOffsetPx = 0f;
+                return true;
+            }
+
             if (rightTouchActive && (rightDragging || (Math.abs(dx) > dp(36) && Math.abs(dx) > Math.abs(dy)))) {
                 settleRightDrag(dx);
                 removeCallbacks(resetRightPage);
@@ -315,6 +386,14 @@ public class HomePanelView extends View {
         }
 
         if (event.getAction() == MotionEvent.ACTION_CANCEL) {
+            if (leftTouchActive) {
+                leftTouchActive = false;
+                leftDragging = false;
+                leftVerticalDragging = false;
+                animateLeftPageTo(leftPage, displayedLeftPage());
+                leftDragOffsetPx = 0f;
+                return true;
+            }
             if (!rightTouchActive) return true;
             rightTouchActive = false;
             rightDragging = false;
@@ -361,6 +440,78 @@ public class HomePanelView extends View {
         float rightStart = outer + leftW + centerW;
         float rightEnd = width - outer;
         return x >= rightStart && x <= rightEnd;
+    }
+
+    private boolean isInLeftPanel(float x) {
+        float width = getWidth();
+        float outer = dp(10);
+        float leftW = clamp(width * 0.27f, dp(210), width * 0.33f);
+        float rightW = clamp(width * 0.31f, dp(225), width * 0.34f);
+        float centerW = width - leftW - rightW - outer * 2f;
+
+        if (centerW < dp(270)) {
+            leftW = width * 0.28f;
+        }
+
+        float leftStart = outer;
+        float leftEnd = outer + leftW;
+        return x >= leftStart && x <= leftEnd;
+    }
+
+    private void setLeftPage(int page) {
+        int nextPage = Math.max(0, Math.min(LEFT_PAGE_COUNT - 1, page));
+        if (nextPage == leftPage) return;
+
+        animateLeftPageTo(nextPage, leftPage);
+    }
+
+    private void settleLeftDrag(float dx) {
+        float panelW = Math.max(1f, leftPanelEndX - leftPanelStartX);
+        int targetPage = leftPage;
+        if (Math.abs(dx) > panelW * 0.22f || Math.abs(dx) > dp(72)) {
+            targetPage = dx < 0 ? leftPage + 1 : leftPage - 1;
+        }
+        targetPage = Math.max(0, Math.min(LEFT_PAGE_COUNT - 1, targetPage));
+        animateLeftPageTo(targetPage, displayedLeftPage());
+    }
+
+    private void animateLeftPageTo(int nextPage, float fromPage) {
+        if (Math.abs(fromPage - nextPage) < 0.001f) {
+            leftPage = nextPage;
+            leftDragOffsetPx = 0f;
+            invalidate();
+            return;
+        }
+
+        leftPageAnimationStart = fromPage;
+        leftPage = nextPage;
+        leftPageAnimationStartedAt = SystemClock.uptimeMillis();
+        removeCallbacks(leftPageAnimationTicker);
+        post(leftPageAnimationTicker);
+        invalidate();
+    }
+
+    private float displayedLeftPage() {
+        float panelW = Math.max(1f, leftPanelEndX - leftPanelStartX);
+        return leftPage - leftDragOffsetPx / panelW;
+    }
+
+    private float resistedLeftDrag(float dx) {
+        if ((leftPage == 0 && dx > 0f) || (leftPage == LEFT_PAGE_COUNT - 1 && dx < 0f)) {
+            return dx * 0.28f;
+        }
+        return dx;
+    }
+
+    private float animatedLeftPage() {
+        if (leftDragging) return displayedLeftPage();
+
+        long elapsed = SystemClock.uptimeMillis() - leftPageAnimationStartedAt;
+        if (elapsed < 0L || elapsed >= RIGHT_PAGE_ANIMATION_MS) return leftPage;
+
+        float progress = elapsed / (float) RIGHT_PAGE_ANIMATION_MS;
+        float eased = 1f - (1f - progress) * (1f - progress) * (1f - progress);
+        return leftPageAnimationStart + (leftPage - leftPageAnimationStart) * eased;
     }
 
     private void setRightPage(int page) {
@@ -438,6 +589,23 @@ public class HomePanelView extends View {
         paint.setShader(null);
     }
 
+    private void drawAnimatedWeatherPanel(Canvas canvas, float x, float y, float w, float h) {
+        int save = canvas.save();
+        canvas.clipRect(x, y, x + w, y + h);
+        float animatedPage = animatedLeftPage();
+        for (int page = 0; page < LEFT_PAGE_COUNT; page++) {
+            float pageX = x + (page - animatedPage) * w;
+            if (pageX > x + w || pageX + w < x) continue;
+
+            if (page == 0) {
+                drawWeatherPanel(canvas, pageX, y, w, h);
+            } else {
+                drawWeatherTrendPage(canvas, pageX, y, w, h);
+            }
+        }
+        canvas.restoreToCount(save);
+    }
+
     private void drawWeatherPanel(Canvas canvas, float x, float y, float w, float h) {
         float pad = dp(18);
         float small = scaleText(h, 12, 14);
@@ -464,40 +632,105 @@ public class HomePanelView extends View {
             return;
         }
 
-        drawCircleBadge(canvas, x + pad + dp(25), y + dp(92), dp(28), "", dp(24));
-        drawCyclingColorWeatherIcon(canvas, x + pad + dp(25), y + dp(92), dp(46), weather.currentCode);
+        WeatherDay today = weather.days.isEmpty() ? null : weather.days.get(0);
+        float blockTop = y + dp(66);
+        float iconCx = x + pad + dp(34);
+        float iconCy = blockTop + dp(34);
+        float rightX = x + pad + dp(82);
+        int todayRain = today == null ? 0 : today.precipitation;
+        String highLow = today != null ? today.high + "°/" + today.low + "°" : "--°/--°";
+
+        drawCircleBadge(canvas, iconCx, iconCy, dp(28), "", dp(24));
+        drawCyclingColorWeatherIcon(canvas, iconCx, iconCy, dp(46), weather.currentCode);
+
+        drawText(canvas, weather.currentTemp + "°", rightX, blockTop + dp(39), dp(36), Color.rgb(238, 250, 246), Paint.Align.LEFT, true);
         drawFittedText(canvas, weather.currentDescription,
-            x + pad + dp(25),
-            y + dp(142),
-            scaleText(h, 16, 22),
+            iconCx,
+            blockTop + dp(72),
+            dp(15),
             Color.WHITE,
             Paint.Align.CENTER,
             true,
-            dp(82)
+            dp(92)
         );
+        drawFittedText(canvas, highLow, rightX, blockTop + dp(72), dp(19), Color.argb(225, 238, 250, 246), Paint.Align.LEFT, true, x + w - pad - rightX);
 
-        WeatherDay today = weather.days.isEmpty() ? null : weather.days.get(0);
-        float textX = x + pad + dp(72);
-        float textW = x + w - pad - textX;
-        String highLow = today != null ? "最高 " + today.high + "°  最低 " + today.low + "°" : "最高 --°  最低 --°";
-        drawText(canvas, weather.currentTemp + "°", textX, y + dp(98), scaleText(h, 48, 66), Color.rgb(238, 250, 246), Paint.Align.LEFT, true);
-        drawFittedText(canvas, highLow, textX, y + dp(134), small, Color.argb(205, 238, 250, 246), Paint.Align.LEFT, true, textW);
-        drawFittedText(canvas, "湿度 " + weather.humidity + "% · 风力 " + weather.windKmh + " km/h",
-            textX,
-            y + dp(158),
-            small,
-            Color.argb(185, 224, 242, 235),
-            Paint.Align.LEFT,
-            false,
-            textW
-        );
-
-        if (weather.days.size() > 1) {
-            drawTrend(canvas, x + pad, y + dp(186), w - pad * 2f, y + h - dp(95));
-        } else {
-            drawRealtimeStatus(canvas, x + pad, y + dp(214), w - pad * 2f);
-        }
+        float metricsTop = blockTop + dp(108);
+        drawWeatherMetricRings(canvas, x + pad, metricsTop, w - pad * 2f, dp(98), today, todayRain);
         drawBattery(canvas, x + pad, y + h - dp(54), w - pad * 2f);
+    }
+
+    private void drawWeatherTrendPage(Canvas canvas, float x, float y, float w, float h) {
+        float pad = dp(18);
+        float titleY = y + dp(23);
+        drawFittedText(canvas, "天气趋势", x + pad, titleY, scaleText(h, 13, 16), Color.argb(190, 224, 242, 235), Paint.Align.LEFT, true, w - pad * 2f);
+
+        if (weather == null || weather.days.isEmpty()) {
+            drawText(canvas, weatherStatus == null || weatherStatus.isEmpty() ? "等待天气数据" : weatherStatus,
+                x + w * 0.5f,
+                y + h * 0.5f,
+                dp(18),
+                Color.rgb(238, 250, 246),
+                Paint.Align.CENTER,
+                true
+            );
+            leftTrendMaxScroll = 0f;
+            return;
+        }
+
+        int count = weather.days.size();
+        drawFittedText(canvas, "共 " + count + " 天 · 上下滑动查看", x + pad, titleY + dp(24), scaleText(h, 12, 14), Color.argb(178, 224, 242, 235), Paint.Align.LEFT, true, w - pad * 2f);
+
+        float contentTop = y + dp(66);
+        float contentBottom = y + h - dp(18);
+        float viewportH = Math.max(dp(80), contentBottom - contentTop);
+        float rowH = dp(36);
+        float contentH = rowH * count;
+        leftTrendMaxScroll = Math.max(0f, contentH - viewportH);
+        leftTrendScrollY = clamp(leftTrendScrollY, 0f, leftTrendMaxScroll);
+
+        int minTemp = Integer.MAX_VALUE;
+        int maxTemp = Integer.MIN_VALUE;
+        for (int i = 0; i < count; i++) {
+            WeatherDay day = weather.days.get(i);
+            minTemp = Math.min(minTemp, day.low);
+            maxTemp = Math.max(maxTemp, day.high);
+        }
+        if (minTemp == Integer.MAX_VALUE || minTemp == maxTemp) {
+            minTemp -= 1;
+            maxTemp += 1;
+        }
+
+        int save = canvas.save();
+        canvas.clipRect(x + pad, contentTop, x + w - pad, contentBottom);
+        Calendar calendar = Calendar.getInstance(Locale.CHINA);
+        for (int i = 0; i < count; i++) {
+            WeatherDay day = weather.days.get(i);
+            float rowTop = contentTop + i * rowH - leftTrendScrollY;
+            if (rowTop > contentBottom || rowTop + rowH < contentTop) {
+                calendar.add(Calendar.DAY_OF_YEAR, 1);
+                continue;
+            }
+
+            String label = i == 0 ? "今天" : i == 1 ? "明天" : new SimpleDateFormat("E", Locale.CHINA).format(calendar.getTime());
+            float baseline = rowTop + rowH * 0.65f;
+            float barY = rowTop + rowH * 0.51f;
+            drawText(canvas, label, x + pad, baseline, dp(11.5f), Color.argb(190, 224, 242, 235), Paint.Align.LEFT, false);
+            drawCyclingColorWeatherIcon(canvas, x + pad + dp(42), baseline - dp(4), dp(18), day.code, true);
+
+            float lowX = x + pad + w * 0.37f;
+            float barStart = x + pad + w * 0.50f;
+            float barEnd = x + pad + w * 0.78f;
+            float highX = x + w - pad;
+            float lowPos = map(day.low, minTemp, maxTemp, barStart, barEnd);
+            float highPos = map(day.high, minTemp, maxTemp, barStart, barEnd);
+            drawTemperatureBar(canvas, barStart, barEnd, lowPos, highPos, barY);
+            drawText(canvas, day.low + "°", lowX, baseline, dp(11.5f), Color.rgb(224, 242, 235), Paint.Align.RIGHT, true);
+            drawText(canvas, day.high + "°", highX, baseline, dp(11.5f), Color.rgb(224, 242, 235), Paint.Align.RIGHT, true);
+
+            calendar.add(Calendar.DAY_OF_YEAR, 1);
+        }
+        canvas.restoreToCount(save);
     }
 
     private void drawEmptyWeather(Canvas canvas, float x, float y, float w, float h) {
@@ -543,9 +776,9 @@ public class HomePanelView extends View {
             drawCyclingColorWeatherIcon(canvas, x + dp(44), baseline - dp(4), dp(19), day.code, true);
 
             float lowX = x + w * 0.40f;
-            float highX = x + w;
-            float barStart = x + w * 0.50f;
+            float barStart = x + w * 0.53f;
             float barEnd = x + w * 0.82f;
+            float highX = x + w;
             float lowPos = map(day.low, minTemp, maxTemp, barStart, barEnd);
             float highPos = map(day.high, minTemp, maxTemp, barStart, barEnd);
             drawTemperatureBar(canvas, barStart, barEnd, lowPos, highPos, barY);
@@ -566,6 +799,80 @@ public class HomePanelView extends View {
             ? "数据时间 " + weather.reportTimeLabel
             : "趋势页暂以实时信息为准";
         drawText(canvas, report, x + dp(12), y + dp(40), dp(12), Color.argb(178, 224, 242, 235), Paint.Align.LEFT, false);
+    }
+
+    private void drawWeatherMetricRings(Canvas canvas, float x, float y, float w, float h, WeatherDay today, int todayRain) {
+        int uv = today == null ? 0 : today.uv;
+
+        String[] labels = { "湿度", "降水", "紫外线" };
+        String[] values = {
+            weather.humidity + "%",
+            todayRain + "%",
+            uv + " " + uvLevel(uv)
+        };
+        float[] progresses = {
+            weather.humidity / 100f,
+            todayRain / 100f,
+            uv / 11f
+        };
+        int[] colors = {
+            Color.rgb(112, 224, 204),
+            Color.rgb(104, 196, 255),
+            Color.rgb(255, 215, 105)
+        };
+
+        int columns = 3;
+        float cellW = w / columns;
+        float radius = Math.min(Math.min(cellW, h) * 0.34f, dp(34));
+
+        for (int i = 0; i < labels.length; i++) {
+            float cx = x + cellW * (i + 0.5f);
+            float cy = y + radius + dp(4);
+            drawCircularWeatherMetric(canvas, cx, cy, radius, i, labels[i], values[i], progresses[i], colors[i], true);
+        }
+    }
+
+    private void drawCircularWeatherMetric(Canvas canvas, float cx, float cy, float radius, int iconType, String label, String value, float progress, int color, boolean showText) {
+        float clamped = Math.max(0f, Math.min(1f, progress));
+        int brightColor = blendColor(color, Color.WHITE, 0.22f);
+
+        paint.setShader(new RadialGradient(cx, cy, radius + dp(10), Color.argb(18, 255, 255, 255), Color.argb(3, 255, 255, 255), Shader.TileMode.CLAMP));
+        canvas.drawCircle(cx, cy, radius + dp(7), paint);
+        paint.setShader(null);
+
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(dp(5.4f));
+        paint.setColor(Color.argb(22, 220, 235, 228));
+        rect.set(cx - radius, cy - radius, cx + radius, cy + radius);
+        canvas.drawArc(rect, -90f, 360f, false, paint);
+
+        paint.setStrokeWidth(dp(5.4f));
+        paint.setShader(new LinearGradient(cx - radius, cy - radius, cx + radius, cy + radius, brightColor, color, Shader.TileMode.CLAMP));
+        canvas.drawArc(rect, -90f, 360f * clamped, false, paint);
+        paint.setShader(null);
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+
+        drawWeatherMetricIcon(canvas, cx, cy, radius * 0.76f, iconType, color);
+        if (showText) {
+            drawFittedText(canvas, label, cx, cy + radius + dp(17), dp(10.5f), Color.argb(178, 224, 242, 235), Paint.Align.CENTER, false, radius * 2.5f);
+            drawFittedText(canvas, value, cx, cy + radius + dp(35), dp(12), Color.argb(220, 238, 250, 246), Paint.Align.CENTER, true, radius * 2.7f);
+        }
+    }
+
+    private void drawWeatherMetricIcon(Canvas canvas, float cx, float cy, float size, int type, int color) {
+        if (type == 0) {
+            drawHumidityIcon(canvas, cx, cy, size, color);
+        } else if (type == 1) {
+            drawSimpleRainIcon(canvas, cx, cy, size * 0.94f, color);
+        } else if (type == 2) {
+            drawUvIcon(canvas, cx, cy, size, color);
+        } else if (type == 3) {
+            drawWindIcon(canvas, cx, cy, size, color);
+        } else {
+            drawTemperatureRangeIcon(canvas, cx, cy, size, color);
+        }
     }
 
     private void drawTemperatureBar(Canvas canvas, float start, float end, float low, float high, float y) {
@@ -750,7 +1057,7 @@ public class HomePanelView extends View {
         drawCyclingColorWeatherIcon(canvas, x + w * 0.16f, weatherCenterY, dp(46), tomorrow.code);
         drawCenteredText(canvas, tomorrow.high + "°", x + w * 0.35f, weatherCenterY, weatherNumberSize, weatherNumberColor, true);
         drawCenteredText(canvas, tomorrow.low + "°", x + w * 0.52f, weatherCenterY, weatherNumberSize, weatherNumberColor, true);
-        drawSimpleRainIcon(canvas, x + w * 0.70f, weatherCenterY, dp(25), Color.argb(205, 248, 248, 250));
+        drawSimpleRainIcon(canvas, x + w * 0.70f, weatherCenterY, dp(25), Color.rgb(104, 196, 255));
         drawCenteredText(canvas, tomorrow.precipitation + "%", x + w * 0.84f, weatherCenterY, weatherNumberSize, weatherNumberColor, true);
     }
 
@@ -1256,16 +1563,15 @@ public class HomePanelView extends View {
         path.cubicTo(cx - size * 0.38f, cy + size * 0.12f, cx - size * 0.28f, cy - size * 0.10f, cx, cy - size * 0.42f);
         path.close();
 
-        int waterColor = Color.rgb(108, 214, 198);
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(Color.argb(46, Color.red(waterColor), Color.green(waterColor), Color.blue(waterColor)));
+        paint.setColor(Color.argb(46, Color.red(color), Color.green(color), Color.blue(color)));
         canvas.drawPath(path, paint);
 
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeCap(Paint.Cap.ROUND);
         paint.setStrokeJoin(Paint.Join.ROUND);
         paint.setStrokeWidth(dp(2.2f));
-        paint.setColor(Color.argb(230, Color.red(waterColor), Color.green(waterColor), Color.blue(waterColor)));
+        paint.setColor(Color.argb(230, Color.red(color), Color.green(color), Color.blue(color)));
         canvas.drawPath(path, paint);
 
         android.graphics.Path highlight = new android.graphics.Path();
@@ -1274,6 +1580,123 @@ public class HomePanelView extends View {
         paint.setStrokeWidth(dp(1.5f));
         paint.setColor(Color.argb(155, 248, 248, 250));
         canvas.drawPath(highlight, paint);
+
+        paint.setStrokeJoin(Paint.Join.MITER);
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawHumidityIcon(Canvas canvas, float cx, float cy, float size, int color) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(dp(2f));
+        paint.setColor(Color.argb(232, Color.red(color), Color.green(color), Color.blue(color)));
+        canvas.drawLine(cx - size * 0.43f, cy - size * 0.36f, cx + size * 0.24f, cy - size * 0.36f, paint);
+
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.argb(210, 238, 250, 246));
+        float dotR = Math.max(dp(1.15f), size * 0.045f);
+        float[][] dots = {
+            { -0.32f, -0.12f }, { -0.10f, -0.12f }, { 0.10f, -0.10f },
+            { -0.23f, 0.08f }, { -0.02f, 0.08f }, { 0.20f, 0.08f },
+            { -0.34f, 0.27f }, { -0.12f, 0.27f }, { 0.08f, 0.27f }
+        };
+        for (float[] dot : dots) {
+            canvas.drawCircle(cx + dot[0] * size, cy + dot[1] * size, dotR, paint);
+        }
+
+        android.graphics.Path drop = new android.graphics.Path();
+        float dx = cx + size * 0.33f;
+        float dy = cy + size * 0.14f;
+        float ds = size * 0.60f;
+        drop.moveTo(dx, dy - ds * 0.42f);
+        drop.cubicTo(dx + ds * 0.28f, dy - ds * 0.10f, dx + ds * 0.38f, dy + ds * 0.12f, dx + ds * 0.23f, dy + ds * 0.32f);
+        drop.cubicTo(dx + ds * 0.10f, dy + ds * 0.48f, dx - ds * 0.10f, dy + ds * 0.48f, dx - ds * 0.23f, dy + ds * 0.32f);
+        drop.cubicTo(dx - ds * 0.38f, dy + ds * 0.12f, dx - ds * 0.28f, dy - ds * 0.10f, dx, dy - ds * 0.42f);
+        drop.close();
+
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.argb(44, Color.red(color), Color.green(color), Color.blue(color)));
+        canvas.drawPath(drop, paint);
+
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        paint.setStrokeWidth(dp(1.8f));
+        paint.setColor(Color.argb(232, Color.red(color), Color.green(color), Color.blue(color)));
+        canvas.drawPath(drop, paint);
+
+        paint.setStrokeJoin(Paint.Join.MITER);
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawUvIcon(Canvas canvas, float cx, float cy, float size, int color) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(dp(1.8f));
+        paint.setColor(Color.argb(228, Color.red(color), Color.green(color), Color.blue(color)));
+
+        float rayInner = size * 0.31f;
+        float rayOuter = size * 0.48f;
+        for (int i = 0; i < 8; i++) {
+            double angle = Math.toRadians(i * 45d);
+            float sx = cx + (float) Math.cos(angle) * rayInner;
+            float sy = cy + (float) Math.sin(angle) * rayInner;
+            float ex = cx + (float) Math.cos(angle) * rayOuter;
+            float ey = cy + (float) Math.sin(angle) * rayOuter;
+            canvas.drawLine(sx, sy, ex, ey, paint);
+        }
+
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.argb(56, Color.red(color), Color.green(color), Color.blue(color)));
+        canvas.drawCircle(cx, cy, size * 0.23f, paint);
+
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(2f));
+        paint.setColor(Color.argb(235, Color.red(color), Color.green(color), Color.blue(color)));
+        canvas.drawCircle(cx, cy, size * 0.23f, paint);
+
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawWindIcon(Canvas canvas, float cx, float cy, float size, int color) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(dp(1.9f));
+        paint.setColor(Color.argb(232, Color.red(color), Color.green(color), Color.blue(color)));
+
+        canvas.drawLine(cx - size * 0.42f, cy - size * 0.18f, cx + size * 0.22f, cy - size * 0.18f, paint);
+        canvas.drawArc(new RectF(cx + size * 0.14f, cy - size * 0.32f, cx + size * 0.43f, cy - size * 0.04f), -90f, 210f, false, paint);
+        canvas.drawLine(cx - size * 0.34f, cy + size * 0.04f, cx + size * 0.34f, cy + size * 0.04f, paint);
+        canvas.drawArc(new RectF(cx + size * 0.26f, cy - size * 0.08f, cx + size * 0.50f, cy + size * 0.17f), -80f, 190f, false, paint);
+        canvas.drawLine(cx - size * 0.22f, cy + size * 0.25f, cx + size * 0.20f, cy + size * 0.25f, paint);
+
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawTemperatureRangeIcon(Canvas canvas, float cx, float cy, float size, int color) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        paint.setStrokeWidth(dp(1.9f));
+        paint.setColor(Color.argb(232, Color.red(color), Color.green(color), Color.blue(color)));
+
+        float leftX = cx - size * 0.18f;
+        canvas.drawLine(leftX, cy - size * 0.38f, leftX, cy + size * 0.18f, paint);
+        canvas.drawCircle(leftX, cy + size * 0.28f, size * 0.13f, paint);
+        canvas.drawLine(leftX, cy - size * 0.38f, leftX + size * 0.12f, cy - size * 0.38f, paint);
+        canvas.drawLine(leftX, cy - size * 0.12f, leftX + size * 0.09f, cy - size * 0.12f, paint);
+
+        android.graphics.Path arrow = new android.graphics.Path();
+        arrow.moveTo(cx + size * 0.12f, cy + size * 0.25f);
+        arrow.lineTo(cx + size * 0.38f, cy - size * 0.22f);
+        arrow.lineTo(cx + size * 0.40f, cy + size * 0.03f);
+        arrow.moveTo(cx + size * 0.38f, cy - size * 0.22f);
+        arrow.lineTo(cx + size * 0.14f, cy - size * 0.18f);
+        canvas.drawPath(arrow, paint);
 
         paint.setStrokeJoin(Paint.Join.MITER);
         paint.setStrokeCap(Paint.Cap.BUTT);
@@ -1387,8 +1810,9 @@ public class HomePanelView extends View {
     private void drawAnimatedRightPanel(Canvas canvas, float x, float y, float w, float h) {
         float pad = dp(18);
         String title = rightPage == 0 ? "明日天气" : rightPage == 1 ? "快捷入口" : "预留页";
-        drawText(canvas, title, x + pad, y + dp(23), dp(14), Color.argb(190, 224, 242, 235), Paint.Align.LEFT, true);
-        drawPageDots(canvas, x + w - pad - dp(18), y + dp(21), dp(3.2f), dp(12));
+        float headerCenterY = y + dp(21);
+        drawText(canvas, title, x + pad, headerCenterY + dp(5), dp(14), Color.argb(190, 224, 242, 235), Paint.Align.LEFT, true);
+        drawPageDots(canvas, x + w - pad - dp(18), headerCenterY, dp(3.2f), dp(12));
 
         float contentX = x + pad;
         float contentY = y + dp(42);
@@ -1440,11 +1864,10 @@ public class HomePanelView extends View {
             return;
         }
 
-        float headY = y + dp(38);
-        drawCyclingColorWeatherIcon(canvas, x + dp(28), headY - dp(3), dp(42), tomorrow.code);
-        drawText(canvas, "明天", x + dp(58), headY - dp(4), dp(18), Color.WHITE, Paint.Align.LEFT, true);
-        drawText(canvas, tomorrow.description, x + dp(58), headY + dp(16), dp(12), Color.argb(180, 224, 242, 235), Paint.Align.LEFT, false);
-        drawText(canvas, tomorrow.high + "°/" + tomorrow.low + "°", x + w - dp(12), headY + dp(2), dp(22), Color.WHITE, Paint.Align.RIGHT, true);
+        float headCenterY = y + dp(36);
+        drawCyclingColorWeatherIcon(canvas, x + dp(28), headCenterY, dp(42), tomorrow.code);
+        drawText(canvas, tomorrow.description, x + dp(58), headCenterY + dp(6), dp(18), Color.WHITE, Paint.Align.LEFT, true);
+        drawText(canvas, tomorrow.high + "°/" + tomorrow.low + "°", x + w - dp(12), headCenterY + dp(8), dp(22), Color.WHITE, Paint.Align.RIGHT, true);
 
         float gridY = y + dp(62);
         float gap = dp(8);
@@ -1725,6 +2148,14 @@ public class HomePanelView extends View {
 
     private int alphaColor(int color, int alpha) {
         return Color.argb(Math.max(0, Math.min(255, alpha)), Color.red(color), Color.green(color), Color.blue(color));
+    }
+
+    private int blendColor(int from, int to, float amount) {
+        float t = Math.max(0f, Math.min(1f, amount));
+        int r = Math.round(Color.red(from) + (Color.red(to) - Color.red(from)) * t);
+        int g = Math.round(Color.green(from) + (Color.green(to) - Color.green(from)) * t);
+        int b = Math.round(Color.blue(from) + (Color.blue(to) - Color.blue(from)) * t);
+        return Color.rgb(r, g, b);
     }
 
     private float dp(float value) {

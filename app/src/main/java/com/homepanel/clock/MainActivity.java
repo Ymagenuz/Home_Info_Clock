@@ -463,7 +463,7 @@ public class MainActivity extends Activity {
             + "&longitude=" + String.format(Locale.US, "%.4f", location.getLongitude())
             + "&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m"
             + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,uv_index_max"
-            + "&forecast_days=7&timezone=auto";
+            + "&forecast_days=15&timezone=auto";
         JSONObject root = new JSONObject(readUrl(url));
         JSONObject current = root.getJSONObject("current");
 
