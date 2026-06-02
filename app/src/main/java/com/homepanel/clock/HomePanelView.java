@@ -1,6 +1,7 @@
 package com.homepanel.clock;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
@@ -21,18 +22,33 @@ import java.util.List;
 import java.util.Locale;
 
 public class HomePanelView extends View {
+    private static final String TIMER_PREFS = "home_panel_timer";
+    private static final String KEY_TIMER_HOURS = "hours";
+    private static final String KEY_TIMER_MINUTES = "minutes";
+    private static final String KEY_TIMER_SECONDS = "seconds";
+    private static final String KEY_TIMER_RUNNING = "running";
+    private static final String KEY_TIMER_ENDS_AT = "ends_at";
+    private static final String KEY_TIMER_FINISHED = "finished";
     private static final int PAGE_RESET_MS = 20_000;
     private static final int LOW_BATTERY_PERCENT = 20;
     private static final long BATTERY_TRANSITION_MS = 900L;
     private static final int LEFT_PAGE_COUNT = 2;
+    private static final int CENTER_PAGE_COUNT = 2;
     private static final int RIGHT_PAGE_COUNT = 3;
     private static final long RIGHT_PAGE_ANIMATION_MS = 260L;
+    private static final long TIMER_ARROW_FADE_MS = 180L;
+    private static final long TIMER_FINISHED_SHAKE_MS = 820L;
+    private static final long TIMER_FINISHED_PAUSE_MS = 800L;
     private static final long CLOCK_FRAME_MS = 33L;
     private static final long SIMPLE_MODE_ANIMATION_MS = 320L;
     private static final boolean WEATHER_ICON_TEST_CYCLE = false;
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
+    private final RectF timerHourButtonRect = new RectF();
+    private final RectF timerMinuteButtonRect = new RectF();
+    private final RectF timerSecondButtonRect = new RectF();
+    private final RectF timerStartButtonRect = new RectF();
     private final RectF bilibiliButtonRect = new RectF();
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy年M月d日 EEEE", Locale.CHINA);
     private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm", Locale.CHINA);
@@ -63,9 +79,45 @@ public class HomePanelView extends View {
     private float leftTrendScrollY;
     private float leftTrendMaxScroll;
     private float leftLastTouchY;
+    private int centerPage;
+    private boolean centerTouchActive;
+    private boolean centerDragging;
+    private float centerDragOffsetPx;
+    private float centerPanelStartX;
+    private float centerPanelEndX;
+    private float centerPageAnimationStart;
+    private long centerPageAnimationStartedAt = -RIGHT_PAGE_ANIMATION_MS;
+    private int timerHours;
+    private int timerMinutes;
+    private int timerSeconds;
+    private boolean timerRunning;
+    private long timerEndsAtMillis;
+    private long timerVisualStartedAt = -RIGHT_PAGE_ANIMATION_MS;
+    private boolean timerFinished;
+    private long timerFinishedStartedAt = -RIGHT_PAGE_ANIMATION_MS;
+    private int timerActiveUnit = -1;
+    private boolean timerRotating;
+    private boolean timerClockwiseStarted;
+    private long timerAdjustmentStartedAt = -TIMER_ARROW_FADE_MS;
+    private long timerArrowFadeOutStartedAt = -TIMER_ARROW_FADE_MS;
+    private float timerCenterX;
+    private float timerCenterY;
+    private float timerRadius;
+    private float timerLastAngle;
+    private float timerAccumulatedAngle;
+    private float timerContinuousValue;
+    private int timerFadingUnit = -1;
+    private float timerFadingValue;
+    private long timerValueFadeOutStartedAt = -TIMER_ARROW_FADE_MS;
     private int rightPage;
     private float touchDownX;
     private float touchDownY;
+    private boolean weatherRefreshDragging;
+    private boolean weatherRefreshLoading;
+    private int weatherRefreshPanel = -1;
+    private float weatherRefreshPull;
+    private float weatherRefreshReboundStart;
+    private long weatherRefreshReboundStartedAt = -RIGHT_PAGE_ANIMATION_MS;
     private boolean rightTouchActive;
     private boolean rightDragging;
     private float rightDragOffsetPx;
@@ -116,6 +168,17 @@ public class HomePanelView extends View {
         }
     };
 
+    private final Runnable centerPageAnimationTicker = new Runnable() {
+        @Override
+        public void run() {
+            long elapsed = SystemClock.uptimeMillis() - centerPageAnimationStartedAt;
+            if (elapsed < RIGHT_PAGE_ANIMATION_MS) {
+                invalidate();
+                postDelayed(this, 16L);
+            }
+        }
+    };
+
     private final Runnable batteryAnimationTicker = new Runnable() {
         @Override
         public void run() {
@@ -127,10 +190,18 @@ public class HomePanelView extends View {
         }
     };
 
+    private final Runnable weatherRefreshTimeout = new Runnable() {
+        @Override
+        public void run() {
+            completeWeatherRefresh();
+        }
+    };
+
     public HomePanelView(Context context) {
         super(context);
         density = getResources().getDisplayMetrics().density;
         setFocusable(true);
+        restoreTimerState();
     }
 
     public void setActionListener(ActionListener listener) {
@@ -156,11 +227,15 @@ public class HomePanelView extends View {
     public void setWeather(WeatherSnapshot weather) {
         this.weather = weather;
         this.weatherStatus = "";
+        completeWeatherRefresh();
         invalidate();
     }
 
     public void setWeatherStatus(String status) {
         this.weatherStatus = status == null ? "" : status;
+        if (weatherRefreshLoading && (status == null || !status.contains("更新"))) {
+            completeWeatherRefresh();
+        }
         invalidate();
     }
 
@@ -193,7 +268,9 @@ public class HomePanelView extends View {
         removeCallbacks(resetRightPage);
         removeCallbacks(batteryAnimationTicker);
         removeCallbacks(leftPageAnimationTicker);
+        removeCallbacks(centerPageAnimationTicker);
         removeCallbacks(rightPageAnimationTicker);
+        removeCallbacks(weatherRefreshTimeout);
         super.onDetachedFromWindow();
     }
 
@@ -222,10 +299,15 @@ public class HomePanelView extends View {
         float bottom = height - outer;
         leftPanelStartX = leftX;
         leftPanelEndX = centerX;
+        centerPanelStartX = centerX;
+        centerPanelEndX = rightX;
         rightPanelStartX = rightX;
         rightPanelEndX = width - outer;
 
         drawModeTransition(canvas, width, height, leftX, centerX, rightX, top, bottom, leftW, centerW, outer);
+        if (timerFinished) {
+            drawTimerFinishedOverlay(canvas, width, height);
+        }
     }
 
     private void drawModeTransition(Canvas canvas, float width, float height, float leftX, float centerX, float rightX, float top, float bottom, float leftW, float centerW, float outer) {
@@ -272,7 +354,7 @@ public class HomePanelView extends View {
         drawSeparator(canvas, rightX, top, bottom);
 
         drawAnimatedWeatherPanel(canvas, leftX, top, leftW, bottom - top);
-        drawClockPanel(canvas, centerX, top, centerW, bottom - top);
+        drawAnimatedClockPanel(canvas, centerX, top, centerW, bottom - top);
         drawAnimatedRightPanel(canvas, rightX, top, getWidth() - rightX - outer, bottom - top);
     }
 
@@ -291,23 +373,62 @@ public class HomePanelView extends View {
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        if (timerFinished) {
+            if (event.getAction() == MotionEvent.ACTION_UP) {
+                dismissTimerFinished();
+            }
+            return true;
+        }
+
         if (event.getAction() == MotionEvent.ACTION_DOWN) {
+            if (isSystemGestureEdge(event.getX())) return false;
+
             touchDownX = event.getX();
             touchDownY = event.getY();
             leftLastTouchY = touchDownY;
             leftTouchActive = !simpleMode && isInLeftPanel(touchDownX);
+            centerTouchActive = !simpleMode && isInCenterPanel(touchDownX);
             rightTouchActive = !simpleMode && isInRightPanel(touchDownX);
+            weatherRefreshDragging = false;
+            weatherRefreshPanel = -1;
+            weatherRefreshPull = 0f;
             if (leftTouchActive && rightTouchActive) {
                 rightTouchActive = false;
+            }
+            if (leftTouchActive || centerTouchActive) {
+                rightTouchActive = false;
+            }
+            if (leftTouchActive) {
+                centerTouchActive = false;
             }
             leftDragging = false;
             leftVerticalDragging = false;
             leftDragOffsetPx = 0f;
+            centerDragging = false;
+            centerDragOffsetPx = 0f;
+            timerActiveUnit = -1;
+            timerRotating = false;
+            timerClockwiseStarted = false;
             rightDragging = false;
             rightDragOffsetPx = 0f;
             if (leftTouchActive) {
                 removeCallbacks(leftPageAnimationTicker);
                 leftPageAnimationStartedAt = -RIGHT_PAGE_ANIMATION_MS;
+            }
+            if (centerTouchActive) {
+                removeCallbacks(centerPageAnimationTicker);
+                centerPageAnimationStartedAt = -RIGHT_PAGE_ANIMATION_MS;
+                if (centerPage == 1) {
+                    if (timerStartButtonRect.contains(touchDownX, touchDownY)) {
+                        return true;
+                    }
+                    if (!timerRunning) {
+                        int unit = timerUnitAt(touchDownX, touchDownY);
+                        if (unit >= 0) {
+                            beginTimerAdjustment(unit, touchDownX, touchDownY);
+                        }
+                    }
+                }
             }
             if (rightTouchActive) {
                 removeCallbacks(rightPageAnimationTicker);
@@ -321,14 +442,19 @@ public class HomePanelView extends View {
             float dy = event.getY() - touchDownY;
 
             if (leftTouchActive) {
-                if (!leftDragging && !leftVerticalDragging) {
-                    if (leftPage == 1 && Math.abs(dy) > dp(8) && Math.abs(dy) > Math.abs(dx)) {
+                if (!leftDragging && !leftVerticalDragging && !weatherRefreshDragging) {
+                    if (leftPage == 0 && dy > dp(9) && dy > Math.abs(dx)) {
+                        weatherRefreshDragging = true;
+                        weatherRefreshPanel = 0;
+                    } else if (leftPage == 1 && Math.abs(dy) > dp(8) && Math.abs(dy) > Math.abs(dx)) {
                         leftVerticalDragging = true;
                     } else if (Math.abs(dx) > dp(8) && Math.abs(dx) > Math.abs(dy)) {
                         leftDragging = true;
                     }
                 }
-                if (leftDragging) {
+                if (weatherRefreshDragging) {
+                    updateWeatherRefreshPull(dy);
+                } else if (leftDragging) {
                     leftDragOffsetPx = resistedLeftDrag(dx);
                     invalidate();
                 } else if (leftVerticalDragging) {
@@ -340,9 +466,34 @@ public class HomePanelView extends View {
                 return true;
             }
 
+            if (centerTouchActive) {
+                if (timerRotating) {
+                    updateTimerAdjustment(event.getX(), event.getY());
+                    return true;
+                }
+                if (!centerDragging && Math.abs(dx) > dp(8) && Math.abs(dx) > Math.abs(dy)) {
+                    centerDragging = true;
+                }
+                if (centerDragging) {
+                    centerDragOffsetPx = resistedCenterDrag(dx);
+                    invalidate();
+                }
+                return true;
+            }
+
             if (rightTouchActive && !rightDragging && Math.abs(dx) > dp(8) && Math.abs(dx) > Math.abs(dy)) {
-                rightDragging = true;
-                removeCallbacks(resetRightPage);
+                if (!weatherRefreshDragging) {
+                    rightDragging = true;
+                    removeCallbacks(resetRightPage);
+                }
+            }
+            if (rightTouchActive && !rightDragging && !weatherRefreshDragging && rightPage == 0 && dy > dp(9) && dy > Math.abs(dx)) {
+                weatherRefreshDragging = true;
+                weatherRefreshPanel = 1;
+            }
+            if (rightTouchActive && weatherRefreshDragging) {
+                updateWeatherRefreshPull(dy);
+                return true;
             }
             if (rightTouchActive && rightDragging) {
                 rightDragOffsetPx = resistedRightDrag(dx);
@@ -357,7 +508,9 @@ public class HomePanelView extends View {
             boolean tap = Math.abs(dx) < dp(12) && Math.abs(dy) < dp(12);
 
             if (leftTouchActive) {
-                if (leftDragging || (Math.abs(dx) > dp(36) && Math.abs(dx) > Math.abs(dy))) {
+                if (weatherRefreshDragging) {
+                    finishWeatherRefresh();
+                } else if (leftDragging || (Math.abs(dx) > dp(36) && Math.abs(dx) > Math.abs(dy))) {
                     settleLeftDrag(dx);
                 } else if (tap && !leftVerticalDragging) {
                     toggleSimpleMode();
@@ -369,10 +522,28 @@ public class HomePanelView extends View {
                 return true;
             }
 
+            if (centerTouchActive) {
+                if (timerRotating) {
+                    finishTimerAdjustment();
+                } else if (centerDragging || (Math.abs(dx) > dp(36) && Math.abs(dx) > Math.abs(dy))) {
+                    settleCenterDrag(dx);
+                } else if (tap && centerPage == 1 && timerStartButtonRect.contains(event.getX(), event.getY())) {
+                    handleTimerStartButton();
+                } else if (tap && centerPage == 0) {
+                    toggleSimpleMode();
+                }
+                centerTouchActive = false;
+                centerDragging = false;
+                centerDragOffsetPx = 0f;
+                return true;
+            }
+
             if (rightTouchActive && (rightDragging || (Math.abs(dx) > dp(36) && Math.abs(dx) > Math.abs(dy)))) {
                 settleRightDrag(dx);
                 removeCallbacks(resetRightPage);
                 postDelayed(resetRightPage, PAGE_RESET_MS);
+            } else if (rightTouchActive && weatherRefreshDragging) {
+                finishWeatherRefresh();
             } else if (tap) {
                 boolean handled = rightTouchActive && handleRightPanelTap(event.getX(), event.getY());
                 if (!handled) {
@@ -390,13 +561,24 @@ public class HomePanelView extends View {
                 leftTouchActive = false;
                 leftDragging = false;
                 leftVerticalDragging = false;
+                cancelWeatherRefresh();
                 animateLeftPageTo(leftPage, displayedLeftPage());
                 leftDragOffsetPx = 0f;
+                return true;
+            }
+            if (centerTouchActive) {
+                centerTouchActive = false;
+                centerDragging = false;
+                cancelWeatherRefresh();
+                finishTimerAdjustment();
+                animateCenterPageTo(centerPage, displayedCenterPage());
+                centerDragOffsetPx = 0f;
                 return true;
             }
             if (!rightTouchActive) return true;
             rightTouchActive = false;
             rightDragging = false;
+            cancelWeatherRefresh();
             animateRightPageTo(rightPage, displayedRightPage());
             rightDragOffsetPx = 0f;
             return true;
@@ -409,9 +591,75 @@ public class HomePanelView extends View {
         simpleModeAnimationStart = simpleModeProgress();
         simpleMode = !simpleMode;
         simpleModeAnimationStartedAt = SystemClock.uptimeMillis();
+        centerDragging = false;
+        centerDragOffsetPx = 0f;
+        finishTimerAdjustment();
         rightDragging = false;
         rightDragOffsetPx = 0f;
         invalidate();
+    }
+
+    private boolean isSystemGestureEdge(float x) {
+        return x <= dp(26) || x >= getWidth() - dp(26);
+    }
+
+    private void updateWeatherRefreshPull(float dy) {
+        weatherRefreshPull = dy <= 0f ? 0f : Math.min(dp(64), dy * 0.42f);
+        invalidate();
+    }
+
+    private void finishWeatherRefresh() {
+        boolean shouldRefresh = weatherRefreshPull >= dp(42);
+        if (shouldRefresh && actionListener != null) {
+            weatherRefreshDragging = false;
+            weatherRefreshLoading = true;
+            weatherRefreshPull = dp(46);
+            removeCallbacks(weatherRefreshTimeout);
+            postDelayed(weatherRefreshTimeout, 12_000L);
+            actionListener.onWeatherRefreshRequested();
+            invalidate();
+        } else {
+            cancelWeatherRefresh();
+        }
+    }
+
+    private void cancelWeatherRefresh() {
+        weatherRefreshDragging = false;
+        weatherRefreshLoading = false;
+        removeCallbacks(weatherRefreshTimeout);
+        beginWeatherRefreshRebound(weatherRefreshPull);
+    }
+
+    private void completeWeatherRefresh() {
+        if (!weatherRefreshLoading && weatherRefreshPull <= 0f) return;
+
+        removeCallbacks(weatherRefreshTimeout);
+        weatherRefreshDragging = false;
+        weatherRefreshLoading = false;
+        beginWeatherRefreshRebound(weatherRefreshPull);
+    }
+
+    private void beginWeatherRefreshRebound(float from) {
+        weatherRefreshReboundStart = from;
+        weatherRefreshReboundStartedAt = SystemClock.uptimeMillis();
+        weatherRefreshPull = 0f;
+        invalidate();
+    }
+
+    private float weatherRefreshOffset(int panel) {
+        if (weatherRefreshPanel != panel) return 0f;
+        if (weatherRefreshDragging || weatherRefreshLoading) return weatherRefreshPull;
+
+        long elapsed = SystemClock.uptimeMillis() - weatherRefreshReboundStartedAt;
+        if (elapsed < 0L || elapsed >= RIGHT_PAGE_ANIMATION_MS) {
+            weatherRefreshPanel = -1;
+            weatherRefreshReboundStart = 0f;
+            return 0f;
+        }
+
+        float t = elapsed / (float) RIGHT_PAGE_ANIMATION_MS;
+        float eased = 1f - (1f - t) * (1f - t) * (1f - t);
+        return weatherRefreshReboundStart * (1f - eased);
     }
 
     private float simpleModeProgress() {
@@ -456,6 +704,24 @@ public class HomePanelView extends View {
         float leftStart = outer;
         float leftEnd = outer + leftW;
         return x >= leftStart && x <= leftEnd;
+    }
+
+    private boolean isInCenterPanel(float x) {
+        float width = getWidth();
+        float outer = dp(10);
+        float leftW = clamp(width * 0.27f, dp(210), width * 0.33f);
+        float rightW = clamp(width * 0.31f, dp(225), width * 0.34f);
+        float centerW = width - leftW - rightW - outer * 2f;
+
+        if (centerW < dp(270)) {
+            leftW = width * 0.28f;
+            rightW = width * 0.30f;
+            centerW = width - leftW - rightW - outer * 2f;
+        }
+
+        float centerStart = outer + leftW;
+        float centerEnd = centerStart + centerW;
+        return x >= centerStart && x <= centerEnd;
     }
 
     private void setLeftPage(int page) {
@@ -512,6 +778,239 @@ public class HomePanelView extends View {
         float progress = elapsed / (float) RIGHT_PAGE_ANIMATION_MS;
         float eased = 1f - (1f - progress) * (1f - progress) * (1f - progress);
         return leftPageAnimationStart + (leftPage - leftPageAnimationStart) * eased;
+    }
+
+    private void settleCenterDrag(float dx) {
+        float panelW = Math.max(1f, centerPanelEndX - centerPanelStartX);
+        int targetPage = centerPage;
+        if (Math.abs(dx) > panelW * 0.22f || Math.abs(dx) > dp(72)) {
+            targetPage = dx < 0 ? centerPage + 1 : centerPage - 1;
+        }
+        targetPage = Math.max(0, Math.min(CENTER_PAGE_COUNT - 1, targetPage));
+        animateCenterPageTo(targetPage, displayedCenterPage());
+    }
+
+    private void animateCenterPageTo(int nextPage, float fromPage) {
+        if (Math.abs(fromPage - nextPage) < 0.001f) {
+            centerPage = nextPage;
+            centerDragOffsetPx = 0f;
+            invalidate();
+            return;
+        }
+
+        centerPageAnimationStart = fromPage;
+        centerPage = nextPage;
+        centerPageAnimationStartedAt = SystemClock.uptimeMillis();
+        removeCallbacks(centerPageAnimationTicker);
+        post(centerPageAnimationTicker);
+        invalidate();
+    }
+
+    private float displayedCenterPage() {
+        float panelW = Math.max(1f, centerPanelEndX - centerPanelStartX);
+        return centerPage - centerDragOffsetPx / panelW;
+    }
+
+    private float resistedCenterDrag(float dx) {
+        if ((centerPage == 0 && dx > 0f) || (centerPage == CENTER_PAGE_COUNT - 1 && dx < 0f)) {
+            return dx * 0.28f;
+        }
+        return dx;
+    }
+
+    private float animatedCenterPage() {
+        if (centerDragging) return displayedCenterPage();
+
+        long elapsed = SystemClock.uptimeMillis() - centerPageAnimationStartedAt;
+        if (elapsed < 0L || elapsed >= RIGHT_PAGE_ANIMATION_MS) return centerPage;
+
+        float progress = elapsed / (float) RIGHT_PAGE_ANIMATION_MS;
+        float eased = 1f - (1f - progress) * (1f - progress) * (1f - progress);
+        return centerPageAnimationStart + (centerPage - centerPageAnimationStart) * eased;
+    }
+
+    private int timerUnitAt(float x, float y) {
+        if (timerHourButtonRect.contains(x, y)) return 0;
+        if (timerMinuteButtonRect.contains(x, y)) return 1;
+        if (timerSecondButtonRect.contains(x, y)) return 2;
+        return -1;
+    }
+
+    private void beginTimerAdjustment(int unit, float x, float y) {
+        timerActiveUnit = unit;
+        timerFadingUnit = -1;
+        timerRotating = true;
+        timerClockwiseStarted = false;
+        timerAdjustmentStartedAt = SystemClock.uptimeMillis();
+        timerArrowFadeOutStartedAt = -TIMER_ARROW_FADE_MS;
+        timerAccumulatedAngle = 0f;
+        timerLastAngle = angleAroundTimer(x, y);
+        snapTimerToAngle(timerLastAngle, unit);
+        invalidate();
+    }
+
+    private void updateTimerAdjustment(float x, float y) {
+        float angle = angleAroundTimer(x, y);
+        float delta = angle - timerLastAngle;
+        if (delta > 180f) delta -= 360f;
+        if (delta < -180f) delta += 360f;
+        timerLastAngle = angle;
+
+        timerAccumulatedAngle += delta;
+        if (Math.abs(timerAccumulatedAngle) > 4f) {
+            if (!timerClockwiseStarted) {
+                timerArrowFadeOutStartedAt = SystemClock.uptimeMillis();
+            }
+            timerClockwiseStarted = true;
+        }
+        timerContinuousValue = clamp(timerContinuousValue + delta / timerStepDegrees(timerActiveUnit), 0f, timerActiveUnit == 0 ? 11f : 59f);
+        setTimerValue(timerActiveUnit, Math.round(timerContinuousValue));
+        persistTimerState();
+        invalidate();
+    }
+
+    private void finishTimerAdjustment() {
+        if (timerActiveUnit >= 0) {
+            timerFadingUnit = timerActiveUnit;
+            timerFadingValue = timerContinuousValue;
+            timerValueFadeOutStartedAt = SystemClock.uptimeMillis();
+        }
+        timerRotating = false;
+        timerActiveUnit = -1;
+        timerClockwiseStarted = false;
+        timerContinuousValue = 0f;
+        invalidate();
+    }
+
+    private float angleAroundTimer(float x, float y) {
+        float angle = (float) Math.toDegrees(Math.atan2(y - timerCenterY, x - timerCenterX)) + 90f;
+        if (angle < 0f) angle += 360f;
+        if (angle >= 360f) angle -= 360f;
+        return angle;
+    }
+
+    private float timerStepDegrees(int unit) {
+        return unit == 0 ? 30f : 6f;
+    }
+
+    private void snapTimerToAngle(float angle, int unit) {
+        if (unit == 0) {
+            timerContinuousValue = clamp(angle / timerStepDegrees(unit), 0f, 11f);
+        } else {
+            timerContinuousValue = clamp(angle / timerStepDegrees(unit), 0f, 59f);
+        }
+        setTimerValue(unit, Math.round(timerContinuousValue));
+        persistTimerState();
+    }
+
+    private int timerDisplayTick(int unit) {
+        if (unit == 0) {
+            int value = Math.round(timerContinuousValue);
+            return value == 0 ? 0 : ((value - 1) % 12) + 1;
+        }
+        return Math.round(timerContinuousValue);
+    }
+
+    private int timerValue(int unit) {
+        if (unit == 0) return timerHours;
+        if (unit == 1) return timerMinutes;
+        return timerSeconds;
+    }
+
+    private void setTimerValue(int unit, int value) {
+        if (unit == 0) {
+            timerHours = Math.max(0, Math.min(11, value));
+        } else if (unit == 1) {
+            timerMinutes = Math.max(0, Math.min(59, value));
+        } else {
+            timerSeconds = Math.max(0, Math.min(59, value));
+        }
+    }
+
+    private void handleTimerStartButton() {
+        if (timerRunning) {
+            clearTimer();
+        } else if (timerTotalSeconds() > 0) {
+            timerRunning = true;
+            timerFinished = false;
+            timerEndsAtMillis = System.currentTimeMillis() + timerTotalSeconds() * 1000L;
+            timerVisualStartedAt = SystemClock.uptimeMillis();
+            persistTimerState();
+        }
+        invalidate();
+    }
+
+    private void clearTimer() {
+        timerRunning = false;
+        timerFinished = false;
+        timerEndsAtMillis = 0L;
+        timerHours = 0;
+        timerMinutes = 0;
+        timerSeconds = 0;
+        finishTimerAdjustment();
+        persistTimerState();
+    }
+
+    private void showTimerFinished() {
+        if (timerFinished) return;
+        timerFinished = true;
+        timerFinishedStartedAt = SystemClock.uptimeMillis();
+    }
+
+    private void dismissTimerFinished() {
+        timerFinished = false;
+        timerFinishedStartedAt = -RIGHT_PAGE_ANIMATION_MS;
+        persistTimerState();
+        invalidate();
+    }
+
+    private void restoreTimerState() {
+        SharedPreferences prefs = getContext().getSharedPreferences(TIMER_PREFS, Context.MODE_PRIVATE);
+        timerHours = prefs.getInt(KEY_TIMER_HOURS, 0);
+        timerMinutes = prefs.getInt(KEY_TIMER_MINUTES, 0);
+        timerSeconds = prefs.getInt(KEY_TIMER_SECONDS, 0);
+        timerRunning = prefs.getBoolean(KEY_TIMER_RUNNING, false);
+        timerEndsAtMillis = prefs.getLong(KEY_TIMER_ENDS_AT, 0L);
+        timerFinished = prefs.getBoolean(KEY_TIMER_FINISHED, false);
+        if (timerFinished) {
+            timerFinishedStartedAt = SystemClock.uptimeMillis();
+        }
+        if (timerRunning && timerEndsAtMillis > 0L) {
+            timerVisualStartedAt = SystemClock.uptimeMillis() - RIGHT_PAGE_ANIMATION_MS;
+            syncTimerRunningState();
+        }
+    }
+
+    private void persistTimerState() {
+        getContext().getSharedPreferences(TIMER_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_TIMER_HOURS, timerHours)
+            .putInt(KEY_TIMER_MINUTES, timerMinutes)
+            .putInt(KEY_TIMER_SECONDS, timerSeconds)
+            .putBoolean(KEY_TIMER_RUNNING, timerRunning)
+            .putLong(KEY_TIMER_ENDS_AT, timerEndsAtMillis)
+            .putBoolean(KEY_TIMER_FINISHED, timerFinished)
+            .apply();
+    }
+
+    private void syncTimerRunningState() {
+        if (!timerRunning) return;
+
+        long remainingMs = timerEndsAtMillis - System.currentTimeMillis();
+        if (remainingMs <= 0L) {
+            timerRunning = false;
+            timerHours = 0;
+            timerMinutes = 0;
+            timerSeconds = 0;
+            showTimerFinished();
+            persistTimerState();
+            return;
+        }
+
+        int remaining = (int) Math.ceil(remainingMs / 1000d);
+        timerHours = remaining / 3600;
+        timerMinutes = (remaining / 60) % 60;
+        timerSeconds = remaining % 60;
     }
 
     private void setRightPage(int page) {
@@ -604,6 +1103,7 @@ public class HomePanelView extends View {
             }
         }
         canvas.restoreToCount(save);
+        drawWeatherRefreshIndicator(canvas, x, y, w, 1);
     }
 
     private void drawWeatherPanel(Canvas canvas, float x, float y, float w, float h) {
@@ -611,6 +1111,10 @@ public class HomePanelView extends View {
         float small = scaleText(h, 12, 14);
         float label = scaleText(h, 13, 16);
         float titleY = y + dp(23);
+        drawWeatherRefreshIndicator(canvas, x, y, w, 0);
+
+        int refreshSave = canvas.save();
+        canvas.translate(0f, weatherRefreshOffset(0));
 
         String title = weather != null && weather.locationLabel != null && !weather.locationLabel.isEmpty()
             ? weather.locationLabel
@@ -629,6 +1133,7 @@ public class HomePanelView extends View {
         if (weather == null) {
             drawEmptyWeather(canvas, x, y, w, h);
             drawBattery(canvas, x + pad, y + h - dp(54), w - pad * 2f);
+            canvas.restoreToCount(refreshSave);
             return;
         }
 
@@ -658,6 +1163,26 @@ public class HomePanelView extends View {
         float metricsTop = blockTop + dp(108);
         drawWeatherMetricRings(canvas, x + pad, metricsTop, w - pad * 2f, dp(98), today, todayRain);
         drawBattery(canvas, x + pad, y + h - dp(54), w - pad * 2f);
+        canvas.restoreToCount(refreshSave);
+    }
+
+    private void drawWeatherRefreshIndicator(Canvas canvas, float x, float y, float w, int panel) {
+        if (weatherRefreshPanel != panel || (!weatherRefreshDragging && !weatherRefreshLoading) || weatherRefreshPull <= 0f) return;
+
+        float progress = Math.min(1f, weatherRefreshPull / dp(42));
+        float cx = x + w * 0.5f;
+        float cy = y + dp(12) + Math.min(weatherRefreshPull, dp(46)) * 0.42f;
+        float startAngle = weatherRefreshLoading ? (SystemClock.uptimeMillis() % 900L) / 900f * 360f - 90f : -90f;
+        float sweep = weatherRefreshLoading ? 270f : 360f * progress;
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(dp(2.2f));
+        paint.setColor(Color.argb(Math.round(70 + 110 * progress), 100, 220, 205));
+        rect.set(cx - dp(12), cy - dp(12), cx + dp(12), cy + dp(12));
+        canvas.drawArc(rect, startAngle, sweep, false, paint);
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+        drawText(canvas, weatherRefreshLoading ? "刷新中" : progress >= 1f ? "松开刷新" : "下拉刷新", cx, cy + dp(28), dp(10.5f), Color.argb(Math.round(120 + 80 * progress), 224, 242, 235), Paint.Align.CENTER, false);
     }
 
     private void drawWeatherTrendPage(Canvas canvas, float x, float y, float w, float h) {
@@ -1004,6 +1529,23 @@ public class HomePanelView extends View {
         return (float) Math.sin(progress * Math.PI);
     }
 
+    private void drawAnimatedClockPanel(Canvas canvas, float x, float y, float w, float h) {
+        int save = canvas.save();
+        canvas.clipRect(x, y, x + w, y + h);
+        float animatedPage = animatedCenterPage();
+        for (int page = 0; page < CENTER_PAGE_COUNT; page++) {
+            float pageX = x + (page - animatedPage) * w;
+            if (pageX > x + w || pageX + w < x) continue;
+
+            if (page == 0) {
+                drawClockPanel(canvas, pageX, y, w, h);
+            } else {
+                drawTimerPanel(canvas, pageX, y, w, h);
+            }
+        }
+        canvas.restoreToCount(save);
+    }
+
     private void drawClockPanel(Canvas canvas, float x, float y, float w, float h) {
         Calendar now = Calendar.getInstance(Locale.CHINA);
         float cx = x + w * 0.5f;
@@ -1014,6 +1556,381 @@ public class HomePanelView extends View {
 
         drawText(canvas, dateFormat.format(now.getTime()), cx, y + h - dp(88), dp(18), Color.argb(190, 224, 242, 235), Paint.Align.CENTER, true);
         drawText(canvas, timeFormat.format(now.getTime()), cx, y + h - dp(22), scaleText(h, 56, 74), Color.rgb(238, 250, 246), Paint.Align.CENTER, true);
+    }
+
+    private void drawTimerPanel(Canvas canvas, float x, float y, float w, float h) {
+        syncTimerRunningState();
+        float cx = x + w * 0.5f;
+        float radius = Math.min(w * 0.37f, h * 0.36f);
+        float cy = y + Math.max(radius + dp(12), h * 0.36f);
+        timerCenterX = cx;
+        timerCenterY = cy;
+        timerRadius = radius;
+
+        float buttonW = Math.min(dp(78), radius * 0.54f);
+        float buttonH = dp(48);
+        float gap = dp(10);
+        float totalW = buttonW * 3f + gap * 2f;
+        float buttonY = cy - buttonH * 0.5f;
+        timerHourButtonRect.set(cx - totalW * 0.5f, buttonY, cx - totalW * 0.5f + buttonW, buttonY + buttonH);
+        timerMinuteButtonRect.set(timerHourButtonRect.right + gap, buttonY, timerHourButtonRect.right + gap + buttonW, buttonY + buttonH);
+        timerSecondButtonRect.set(timerMinuteButtonRect.right + gap, buttonY, timerMinuteButtonRect.right + gap + buttonW, buttonY + buttonH);
+
+        int displayUnit = timerDisplayUnit();
+        int activeColor = displayUnit >= 0 ? timerUnitColor(displayUnit) : Color.rgb(255, 179, 0);
+        drawTimerRing(canvas, cx, cy, radius, activeColor);
+        drawTimerCountdownRings(canvas, cx, cy, radius, true);
+        if (timerRotating) {
+            drawTimerRotationArrows(canvas, cx, cy, radius);
+        }
+        if (timerRotating && timerActiveUnit >= 0) {
+            drawTimerTickValue(canvas, cx, cy, radius, activeColor);
+        }
+
+        drawTimerButton(canvas, timerHourButtonRect, "时", timerHours, 0);
+        drawTimerButton(canvas, timerMinuteButtonRect, "分", timerMinutes, 1);
+        drawTimerButton(canvas, timerSecondButtonRect, "秒", timerSeconds, 2);
+
+        drawText(canvas, "定时器", cx, y + h - dp(78), dp(18), Color.argb(190, 224, 242, 235), Paint.Align.CENTER, true);
+        drawTimerStartButton(canvas, cx, y + h - dp(37), Math.min(w * 0.48f, dp(190)), dp(50));
+    }
+
+    private void drawTimerRing(Canvas canvas, float cx, float cy, float radius, int activeColor) {
+        int displayUnit = timerDisplayUnit();
+        float value = timerDisplayValue();
+        int units = displayUnit == 0 ? 12 : 60;
+        float angleValue = displayUnit == 0
+            ? (value <= 0f ? 0f : (((value - 1f) % 12f) + 1f) / 12f)
+            : value / 60f;
+        float highlightAlpha = timerValueHighlightAlpha();
+
+        rect.set(cx - radius, cy - radius, cx + radius, cy + radius);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(dp(9.5f));
+        paint.setColor(displayUnit >= 0 ? Color.argb(58, Color.red(activeColor), Color.green(activeColor), Color.blue(activeColor)) : Color.argb(22, 248, 248, 250));
+        canvas.drawArc(rect, -90f, 360f, false, paint);
+        if (displayUnit >= 0 && angleValue > 0f && highlightAlpha > 0f) {
+            paint.setColor(alphaColor(activeColor, Math.round(165f * highlightAlpha)));
+            canvas.drawArc(rect, -90f, 360f * angleValue, false, paint);
+        }
+
+        paint.setStrokeWidth(dp(2.1f));
+        float activeTickFloat = displayUnit == 0
+            ? (value <= 0f ? 0f : ((value - 1f) % 12f) + 1f)
+            : value;
+        for (int i = 0; i < units; i++) {
+            double angle = Math.toRadians(i * (360f / units) - 90f);
+            float tickDistance = timerCircularDistance(i, activeTickFloat, units);
+            float emphasis = displayUnit >= 0 ? Math.max(0f, 1f - tickDistance) * highlightAlpha : 0f;
+            float outer = radius * 0.99f + dp(8) * emphasis;
+            float baseInner = radius * (i % (units == 12 ? 1 : 5) == 0 ? 0.91f : 0.94f);
+            float inner = baseInner - dp(8) * emphasis;
+            float startX = cx + (float) Math.cos(angle) * inner;
+            float startY = cy + (float) Math.sin(angle) * inner;
+            float endX = cx + (float) Math.cos(angle) * outer;
+            float endY = cy + (float) Math.sin(angle) * outer;
+            paint.setStrokeWidth(dp(2.1f + 1.5f * emphasis));
+            paint.setColor(emphasis > 0f ? Color.argb(Math.round(210 + 45 * emphasis), 248, 248, 250) : i % (units == 12 ? 1 : 5) == 0 ? Color.argb(230, 248, 248, 250) : Color.argb(132, 248, 248, 250));
+            canvas.drawLine(startX, startY, endX, endY, paint);
+        }
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawTimerButton(Canvas canvas, RectF button, String label, int value, int unit) {
+        int color = timerUnitColor(unit);
+        boolean active = timerRotating && timerActiveUnit == unit;
+        float cx = button.centerX();
+        float cy = button.centerY();
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(active ? alphaColor(color, 78) : Color.argb(28, 255, 255, 255));
+        canvas.drawRoundRect(button, dp(9), dp(9), paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(1));
+        paint.setColor(active ? alphaColor(color, 210) : Color.argb(38, 255, 255, 255));
+        canvas.drawRoundRect(button, dp(9), dp(9), paint);
+        paint.setStyle(Paint.Style.FILL);
+
+        drawText(canvas, String.format(Locale.CHINA, "%02d", value), cx, cy - dp(1), dp(20), Color.rgb(238, 250, 246), Paint.Align.CENTER, true);
+        drawText(canvas, label, cx, cy + dp(17), dp(10.5f), active ? color : Color.argb(170, 224, 242, 235), Paint.Align.CENTER, true);
+    }
+
+    private void drawTimerStartButton(Canvas canvas, float cx, float cy, float w, float h) {
+        float left = cx - w * 0.5f;
+        float top = cy - h * 0.5f;
+        rect.set(left, top, left + w, top + h);
+        timerStartButtonRect.set(rect);
+        int color = timerRunning ? Color.rgb(255, 136, 94) : timerTotalSeconds() > 0 ? Color.rgb(100, 220, 205) : Color.argb(170, 224, 242, 235);
+
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(timerRunning ? Color.argb(46, 255, 136, 94) : timerTotalSeconds() > 0 ? Color.argb(38, 100, 220, 205) : Color.argb(22, 255, 255, 255));
+        canvas.drawRoundRect(rect, h * 0.5f, h * 0.5f, paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(1.2f));
+        paint.setColor(timerRunning ? Color.argb(135, 255, 136, 94) : timerTotalSeconds() > 0 ? Color.argb(130, 100, 220, 205) : Color.argb(42, 255, 255, 255));
+        canvas.drawRoundRect(rect, h * 0.5f, h * 0.5f, paint);
+        paint.setStyle(Paint.Style.FILL);
+
+        drawText(canvas, timerRunning ? "清零" : timerTotalSeconds() > 0 ? "开始 " + String.format(Locale.CHINA, "%02d:%02d:%02d", timerHours, timerMinutes, timerSeconds) : "开始", cx, cy + dp(6), dp(18), color, Paint.Align.CENTER, true);
+    }
+
+    private void drawTimerRotationArrows(Canvas canvas, float cx, float cy, float radius) {
+        float alpha = timerArrowAlpha();
+        if (alpha <= 0f) return;
+        int color = Color.argb(Math.round(92f * alpha), 248, 248, 250);
+        float arrowRadius = radius + dp(24);
+        drawRingArrow(canvas, cx, cy, arrowRadius, 145f, 72f, color);
+        drawRingArrow(canvas, cx, cy, arrowRadius, -45f, 90f, color);
+    }
+
+    private void drawRingArrow(Canvas canvas, float cx, float cy, float radius, float startAngle, float sweep, int color) {
+        RectF arrowRect = new RectF(cx - radius, cy - radius, cx + radius, cy + radius);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(dp(2.4f));
+        paint.setColor(color);
+        canvas.drawArc(arrowRect, startAngle, sweep, false, paint);
+
+        double end = Math.toRadians(startAngle + sweep);
+        float endX = cx + (float) Math.cos(end) * radius;
+        float endY = cy + (float) Math.sin(end) * radius;
+        double tangent = end + (sweep >= 0f ? Math.toRadians(90) : -Math.toRadians(90));
+        double a1 = tangent + Math.toRadians(150);
+        double a2 = tangent - Math.toRadians(150);
+        canvas.drawLine(endX, endY, endX + (float) Math.cos(a1) * dp(8), endY + (float) Math.sin(a1) * dp(8), paint);
+        canvas.drawLine(endX, endY, endX + (float) Math.cos(a2) * dp(8), endY + (float) Math.sin(a2) * dp(8), paint);
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawTimerCountdownRings(Canvas canvas, float cx, float cy, float radius, boolean onTimerPage) {
+        if (!timerRunning) return;
+
+        float alpha = timerCountdownVisualAlpha();
+        if (alpha <= 0f) return;
+
+        float remaining = Math.max(0f, (timerEndsAtMillis - System.currentTimeMillis()) / 1000f);
+        if (remaining <= 0f) return;
+
+        float hourValue = countdownParentValue(remaining, 3600f, 11.999f);
+        float minuteValue = countdownParentValue(remaining % 3600f, 60f, 59f);
+        float secondValue = remaining % 60f;
+        float baseRadius = onTimerPage ? radius * 0.73f : radius * 0.71f;
+        float gap = onTimerPage ? dp(8.4f) : dp(7.4f);
+        float stroke = onTimerPage ? dp(4.2f) : dp(3.7f);
+
+        drawCountdownUnitRing(canvas, cx, cy, baseRadius, hourValue, 12f, timerUnitColor(0), alpha, stroke);
+        drawCountdownUnitRing(canvas, cx, cy, baseRadius + gap, minuteValue, 60f, timerUnitColor(1), alpha, stroke);
+        drawCountdownUnitRing(canvas, cx, cy, baseRadius + gap * 2f, secondValue, 60f, timerUnitColor(2), alpha, stroke);
+    }
+
+    private void drawCountdownUnitRing(Canvas canvas, float cx, float cy, float r, float value, float scale, int color, float alpha, float stroke) {
+        if (value <= 0.01f) return;
+
+        float normalized = value % scale;
+        if (normalized <= 0.01f) normalized = scale;
+        float fraction = Math.max(0f, Math.min(1f, normalized / scale));
+        float cycleAlpha = scale >= 60f && normalized > scale - 0.6f ? clamp((scale - normalized) / 0.6f, 0f, 1f) : 1f;
+        rect.set(cx - r, cy - r, cx + r, cy + r);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(stroke);
+        paint.setColor(alphaColor(color, Math.round(185f * alpha * cycleAlpha)));
+        canvas.drawArc(rect, -90f, 360f * fraction, false, paint);
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private float countdownParentValue(float seconds, float unitSeconds, float maxValue) {
+        float raw = seconds / unitSeconds;
+        int floor = (int) Math.floor(raw);
+        float value = Math.min(maxValue, floor);
+        float remainder = seconds - floor * unitSeconds;
+        float transitionSeconds = 0.85f;
+        float sinceDrop = unitSeconds - remainder;
+        if (sinceDrop >= 0f && sinceDrop < transitionSeconds) {
+            float t = sinceDrop / transitionSeconds;
+            float extra = 1f - t * t;
+            value = floor + extra;
+        }
+        if (floor <= 0 && sinceDrop >= transitionSeconds) return 0f;
+        return Math.min(maxValue, value);
+    }
+
+    private float timerCountdownVisualAlpha() {
+        if (!timerRunning) return 0f;
+        float t = (SystemClock.uptimeMillis() - timerVisualStartedAt) / (float) RIGHT_PAGE_ANIMATION_MS;
+        return easeOutCubic(Math.max(0f, Math.min(1f, t)));
+    }
+
+    private float timerArrowAlpha() {
+        long now = SystemClock.uptimeMillis();
+        if (timerClockwiseStarted) {
+            float t = (now - timerArrowFadeOutStartedAt) / (float) TIMER_ARROW_FADE_MS;
+            return Math.max(0f, 1f - t);
+        }
+        float t = (now - timerAdjustmentStartedAt) / (float) TIMER_ARROW_FADE_MS;
+        return Math.max(0f, Math.min(1f, t));
+    }
+
+    private float timerValueHighlightAlpha() {
+        if (timerRotating) return 1f;
+        long now = SystemClock.uptimeMillis();
+        if (timerFadingUnit < 0) return 0f;
+        float t = (now - timerValueFadeOutStartedAt) / (float) TIMER_ARROW_FADE_MS;
+        return Math.max(0f, 1f - t);
+    }
+
+    private int timerDisplayUnit() {
+        if (timerActiveUnit >= 0) return timerActiveUnit;
+        if (timerFadingUnit >= 0 && timerValueHighlightAlpha() > 0f) return timerFadingUnit;
+        return -1;
+    }
+
+    private float timerDisplayValue() {
+        if (timerActiveUnit >= 0) return timerContinuousValue;
+        if (timerFadingUnit >= 0) return timerFadingValue;
+        return 0f;
+    }
+
+    private float timerCircularDistance(float a, float b, int units) {
+        float diff = Math.abs(a - b);
+        return Math.min(diff, units - diff);
+    }
+
+    private float easeOutCubic(float t) {
+        float clamped = Math.max(0f, Math.min(1f, t));
+        return 1f - (1f - clamped) * (1f - clamped) * (1f - clamped);
+    }
+
+    private void drawTimerTickValue(Canvas canvas, float cx, float cy, float radius, int color) {
+        int value = timerValue(timerActiveUnit);
+        int units = timerActiveUnit == 0 ? 12 : 60;
+        int tick = timerActiveUnit == 0 ? (value == 0 ? 0 : ((value - 1) % 12) + 1) : value;
+        float angleDeg = tick * (360f / units) - 90f;
+        double angle = Math.toRadians(angleDeg);
+        float tx = cx + (float) Math.cos(angle) * (radius + dp(34));
+        float ty = cy + (float) Math.sin(angle) * (radius + dp(34));
+        paint.setColor(alphaColor(color, 85));
+        canvas.drawCircle(tx, ty, dp(16), paint);
+        drawCenteredText(canvas, String.valueOf(value), tx, ty, dp(13), Color.rgb(248, 248, 250), true);
+    }
+
+    private int timerTotalSeconds() {
+        return timerHours * 3600 + timerMinutes * 60 + timerSeconds;
+    }
+
+    private int timerUnitColor(int unit) {
+        if (unit == 0) return Color.rgb(255, 205, 94);
+        if (unit == 1) return Color.rgb(100, 220, 205);
+        return Color.rgb(255, 136, 94);
+    }
+
+    private void drawTimerFinishedOverlay(Canvas canvas, float width, float height) {
+        paint.setShader(null);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.rgb(0, 0, 0));
+        canvas.drawRect(0, 0, width, height, paint);
+
+        float cx = width * 0.5f;
+        float cy = height * 0.44f;
+        long elapsed = Math.max(0L, SystemClock.uptimeMillis() - timerFinishedStartedAt);
+        long cycle = TIMER_FINISHED_SHAKE_MS + TIMER_FINISHED_PAUSE_MS;
+        float phase = (elapsed % cycle) / (float) cycle;
+        float rotate = 0f;
+        float scale = 1f;
+        if (phase < TIMER_FINISHED_SHAKE_MS / (float) cycle) {
+            float t = phase * cycle / (float) TIMER_FINISHED_SHAKE_MS;
+            float envelope = (float) Math.sin(t * Math.PI);
+            float wave = (float) Math.sin(t * Math.PI * 10f) * envelope;
+            rotate = wave * 12f;
+            scale = 1f + 0.07f * Math.abs(wave);
+        }
+
+        int save = canvas.save();
+        canvas.translate(cx, cy - dp(42));
+        canvas.scale(scale, scale);
+        canvas.rotate(rotate);
+        drawTimerBellIcon(canvas, 0f, 0f, dp(72), Color.rgb(255, 205, 94));
+        canvas.restoreToCount(save);
+
+        drawCenteredText(canvas, "时间到", cx, cy + dp(54), dp(44), Color.rgb(238, 250, 246), true);
+        drawText(canvas, "轻触屏幕关闭", cx, cy + dp(96), dp(15), Color.argb(170, 224, 242, 235), Paint.Align.CENTER, false);
+    }
+
+    private void drawTimerBellIcon(Canvas canvas, float cx, float cy, float size, int color) {
+        int outline = Color.rgb(20, 34, 48);
+        int keyline = Color.rgb(238, 250, 246);
+        int fill = Color.rgb(252, 219, 122);
+        int brim = Color.rgb(103, 205, 218);
+        float stroke = size * 0.055f;
+
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        rect.set(cx - size * 0.11f, cy - size * 0.62f, cx + size * 0.11f, cy - size * 0.20f);
+        paint.setStrokeWidth(stroke * 1.8f);
+        paint.setColor(keyline);
+        canvas.drawRoundRect(rect, size * 0.11f, size * 0.11f, paint);
+        paint.setStrokeWidth(stroke);
+        paint.setColor(outline);
+        canvas.drawRoundRect(rect, size * 0.11f, size * 0.11f, paint);
+
+        android.graphics.Path bell = new android.graphics.Path();
+        bell.moveTo(cx - size * 0.42f, cy + size * 0.17f);
+        bell.cubicTo(cx - size * 0.38f, cy - size * 0.30f, cx - size * 0.24f, cy - size * 0.50f, cx, cy - size * 0.50f);
+        bell.cubicTo(cx + size * 0.24f, cy - size * 0.50f, cx + size * 0.38f, cy - size * 0.30f, cx + size * 0.42f, cy + size * 0.17f);
+        bell.lineTo(cx + size * 0.49f, cy + size * 0.30f);
+        bell.lineTo(cx - size * 0.49f, cy + size * 0.30f);
+        bell.close();
+
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(fill);
+        canvas.drawPath(bell, paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(stroke * 1.75f);
+        paint.setColor(keyline);
+        canvas.drawPath(bell, paint);
+        paint.setStrokeWidth(stroke);
+        paint.setColor(outline);
+        canvas.drawPath(bell, paint);
+
+        rect.set(cx - size * 0.55f, cy + size * 0.25f, cx + size * 0.55f, cy + size * 0.39f);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(brim);
+        canvas.drawRoundRect(rect, size * 0.07f, size * 0.07f, paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(stroke * 1.75f);
+        paint.setColor(keyline);
+        canvas.drawRoundRect(rect, size * 0.07f, size * 0.07f, paint);
+        paint.setStrokeWidth(stroke);
+        paint.setColor(outline);
+        canvas.drawRoundRect(rect, size * 0.07f, size * 0.07f, paint);
+
+        rect.set(cx - size * 0.16f, cy + size * 0.34f, cx + size * 0.16f, cy + size * 0.66f);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(fill);
+        canvas.drawOval(rect, paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(stroke * 1.75f);
+        paint.setColor(keyline);
+        canvas.drawOval(rect, paint);
+        paint.setStrokeWidth(stroke);
+        paint.setColor(outline);
+        canvas.drawOval(rect, paint);
+
+        android.graphics.Path shine = new android.graphics.Path();
+        shine.moveTo(cx - size * 0.29f, cy - size * 0.22f);
+        shine.cubicTo(cx - size * 0.23f, cy - size * 0.36f, cx - size * 0.12f, cy - size * 0.42f, cx - size * 0.02f, cy - size * 0.43f);
+        paint.setColor(Color.argb(215, 255, 255, 255));
+        paint.setStrokeWidth(size * 0.045f);
+        canvas.drawPath(shine, paint);
+        canvas.drawLine(cx - size * 0.34f, cy - size * 0.08f, cx - size * 0.34f, cy + size * 0.02f, paint);
+
+        paint.setStrokeCap(Paint.Cap.BUTT);
+        paint.setStrokeJoin(Paint.Join.MITER);
+        paint.setStyle(Paint.Style.FILL);
     }
 
     private void drawSimpleClockPanel(Canvas canvas, float x, float y, float w, float h) {
@@ -1704,18 +2621,24 @@ public class HomePanelView extends View {
     }
 
     private void drawAnalogClock(Canvas canvas, float cx, float cy, float radius) {
+        syncTimerRunningState();
         Calendar now = Calendar.getInstance(Locale.CHINA);
         long nowMillis = System.currentTimeMillis();
         now.setTimeInMillis(nowMillis);
 
         drawAppleClockMarks(canvas, cx, cy, radius);
+        drawTimerCountdownRings(canvas, cx, cy, radius, false);
 
+        float timerAlpha = timerCountdownVisualAlpha();
+        int numberAlpha = Math.round(248f * (1f - timerAlpha));
         for (int i = 1; i <= 12; i++) {
             double angle = Math.toRadians(i * 30 - 90);
             float numberSize = dp(20.5f);
             float tx = cx + (float) Math.cos(angle) * radius * 0.78f;
             float ty = cy + (float) Math.sin(angle) * radius * 0.78f + numberSize * 0.34f;
-            drawText(canvas, String.valueOf(i), tx, ty, numberSize, Color.rgb(248, 248, 250), Paint.Align.CENTER, true);
+            if (numberAlpha > 0) {
+                drawText(canvas, String.valueOf(i), tx, ty, numberSize, Color.argb(numberAlpha, 248, 248, 250), Paint.Align.CENTER, true);
+            }
         }
 
         int hour = now.get(Calendar.HOUR);
@@ -1852,6 +2775,9 @@ public class HomePanelView extends View {
     private void drawTomorrowCard(Canvas canvas, float x, float y, float w, float h) {
         WeatherDay tomorrow = weather != null && weather.days.size() > 1 ? weather.days.get(1) : null;
 
+        int refreshSave = canvas.save();
+        canvas.translate(0f, weatherRefreshOffset(1));
+
         if (tomorrow == null) {
             drawText(canvas, weatherStatus == null || weatherStatus.isEmpty() ? "等待天气数据" : weatherStatus,
                 x + w * 0.5f,
@@ -1861,6 +2787,7 @@ public class HomePanelView extends View {
                 Paint.Align.CENTER,
                 true
             );
+            canvas.restoreToCount(refreshSave);
             return;
         }
 
@@ -1883,6 +2810,7 @@ public class HomePanelView extends View {
         for (int i = 0; i < tips.size(); i++) {
             drawTip(canvas, x + dp(10), tipY + i * dp(42), w - dp(20), tips.get(i)[0], tips.get(i)[1]);
         }
+        canvas.restoreToCount(refreshSave);
     }
 
     private void drawMetricCell(Canvas canvas, float x, float y, float w, float h, String label, String value) {
@@ -2197,5 +3125,6 @@ public class HomePanelView extends View {
 
     public interface ActionListener {
         void onOpenBilibili();
+        void onWeatherRefreshRequested();
     }
 }

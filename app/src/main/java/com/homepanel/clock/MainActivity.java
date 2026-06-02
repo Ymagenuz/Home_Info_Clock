@@ -7,6 +7,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.location.Address;
 import android.location.Geocoder;
@@ -51,6 +52,8 @@ import java.util.zip.GZIPInputStream;
 public class MainActivity extends Activity {
     private static final int LOCATION_REQUEST_CODE = 1001;
     private static final String TAG = "HomeInfoClock";
+    private static final String WEATHER_PREFS = "home_panel_weather";
+    private static final String KEY_WEATHER_JSON = "weather_json";
     private static final long WEATHER_REFRESH_MS = 30L * 60L * 1000L;
     private static final long LOCATION_REFRESH_MS = 30_000L;
 
@@ -61,6 +64,7 @@ public class MainActivity extends Activity {
     private HomePanelView panelView;
     private LocationManager locationManager;
     private Location lastLocation;
+    private HomePanelView.WeatherSnapshot cachedWeather;
     private long lastWeatherFetchAt;
     private long lastLocationLabelAt;
     private String cachedQWeatherJwt;
@@ -76,7 +80,7 @@ public class MainActivity extends Activity {
             + " accuracy=" + location.getAccuracy());
         panelView.setLocation(location, false);
         resolveLocationLabelIfNeeded(location);
-        fetchWeatherIfNeeded(false);
+        fetchWeatherIfNeeded(true);
     };
 
     private final BroadcastReceiver batteryReceiver = new BroadcastReceiver() {
@@ -103,8 +107,19 @@ public class MainActivity extends Activity {
         enterImmersiveMode();
 
         panelView = new HomePanelView(this);
-        panelView.setActionListener(this::openBilibili);
+        panelView.setActionListener(new HomePanelView.ActionListener() {
+            @Override
+            public void onOpenBilibili() {
+                openBilibili();
+            }
+
+            @Override
+            public void onWeatherRefreshRequested() {
+                fetchWeatherIfNeeded(false);
+            }
+        });
         setContentView(panelView);
+        restoreCachedWeather();
 
         locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         updateBattery();
@@ -128,12 +143,12 @@ public class MainActivity extends Activity {
         super.onPause();
         stopBatteryUpdates();
         stopLocationUpdates();
-        mainHandler.removeCallbacks(refreshRunnable);
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        mainHandler.removeCallbacks(refreshRunnable);
         ioExecutor.shutdownNow();
         labelExecutor.shutdownNow();
     }
@@ -343,12 +358,17 @@ public class MainActivity extends Activity {
         }
 
         if (location == null) {
-            panelView.setWeatherStatus("等待定位");
+            if (cachedWeather == null) {
+                panelView.setWeatherStatus("等待定位");
+            }
             return;
         }
 
         long now = System.currentTimeMillis();
-        if (allowCached && now - lastWeatherFetchAt < WEATHER_REFRESH_MS) return;
+        if (allowCached && cachedWeather != null && now - lastWeatherFetchAt < WEATHER_REFRESH_MS) {
+            panelView.setWeather(cachedWeather);
+            return;
+        }
         if (fetchingWeather) return;
 
         fetchingWeather = true;
@@ -363,8 +383,10 @@ public class MainActivity extends Activity {
                 snapshot.updatedAtMillis = System.currentTimeMillis();
                 mainHandler.post(() -> {
                     lastWeatherFetchAt = snapshot.updatedAtMillis;
+                    cachedWeather = snapshot;
                     fetchingWeather = false;
                     panelView.setWeather(snapshot);
+                    persistCachedWeather(snapshot);
                 });
             } catch (Exception error) {
                 Log.w(TAG, "weather fetch failed", error);
@@ -379,6 +401,110 @@ public class MainActivity extends Activity {
                 });
             }
         });
+    }
+
+    private void restoreCachedWeather() {
+        SharedPreferences prefs = getSharedPreferences(WEATHER_PREFS, MODE_PRIVATE);
+        String json = prefs.getString(KEY_WEATHER_JSON, null);
+        if (json == null || json.isEmpty()) return;
+
+        try {
+            cachedWeather = weatherFromJson(new JSONObject(json));
+            lastWeatherFetchAt = cachedWeather.updatedAtMillis;
+            panelView.setWeather(cachedWeather);
+        } catch (Exception error) {
+            Log.w(TAG, "cached weather restore failed", error);
+            prefs.edit().remove(KEY_WEATHER_JSON).apply();
+        }
+    }
+
+    private void persistCachedWeather(HomePanelView.WeatherSnapshot snapshot) {
+        try {
+            getSharedPreferences(WEATHER_PREFS, MODE_PRIVATE)
+                .edit()
+                .putString(KEY_WEATHER_JSON, weatherToJson(snapshot).toString())
+                .apply();
+        } catch (Exception error) {
+            Log.w(TAG, "cached weather persist failed", error);
+        }
+    }
+
+    private JSONObject weatherToJson(HomePanelView.WeatherSnapshot snapshot) throws Exception {
+        JSONObject root = new JSONObject()
+            .put("locationLabel", snapshot.locationLabel)
+            .put("updatedAtMillis", snapshot.updatedAtMillis)
+            .put("currentTemp", snapshot.currentTemp)
+            .put("apparentTemp", snapshot.apparentTemp)
+            .put("humidity", snapshot.humidity)
+            .put("windKmh", snapshot.windKmh)
+            .put("currentCode", snapshot.currentCode)
+            .put("currentDescription", snapshot.currentDescription)
+            .put("sourceLabel", snapshot.sourceLabel)
+            .put("reportTimeLabel", snapshot.reportTimeLabel)
+            .put("forecastAvailable", snapshot.forecastAvailable);
+
+        JSONArray days = new JSONArray();
+        for (HomePanelView.WeatherDay day : snapshot.days) {
+            days.put(new JSONObject()
+                .put("date", day.date)
+                .put("code", day.code)
+                .put("description", day.description)
+                .put("icon", day.icon)
+                .put("high", day.high)
+                .put("low", day.low)
+                .put("precipitation", day.precipitation)
+                .put("uv", day.uv)
+                .put("windKmh", day.windKmh)
+                .put("windDirection", day.windDirection)
+                .put("clothingTip", day.clothingTip)
+                .put("umbrellaTip", day.umbrellaTip)
+                .put("sportTip", day.sportTip)
+                .put("travelTip", day.travelTip)
+                .put("sunProtectionTip", day.sunProtectionTip));
+        }
+        root.put("days", days);
+        return root;
+    }
+
+    private HomePanelView.WeatherSnapshot weatherFromJson(JSONObject root) {
+        HomePanelView.WeatherSnapshot snapshot = new HomePanelView.WeatherSnapshot();
+        snapshot.locationLabel = root.optString("locationLabel", snapshot.locationLabel);
+        snapshot.updatedAtMillis = root.optLong("updatedAtMillis", 0L);
+        snapshot.currentTemp = root.optInt("currentTemp", 0);
+        snapshot.apparentTemp = root.optInt("apparentTemp", snapshot.currentTemp);
+        snapshot.humidity = root.optInt("humidity", 0);
+        snapshot.windKmh = root.optInt("windKmh", 0);
+        snapshot.currentCode = root.optInt("currentCode", 3);
+        snapshot.currentDescription = root.optString("currentDescription", snapshot.currentDescription);
+        snapshot.sourceLabel = root.optString("sourceLabel", "");
+        snapshot.reportTimeLabel = root.optString("reportTimeLabel", "");
+        snapshot.forecastAvailable = root.optBoolean("forecastAvailable", true);
+
+        JSONArray days = root.optJSONArray("days");
+        if (days != null) {
+            for (int i = 0; i < days.length(); i++) {
+                JSONObject item = days.optJSONObject(i);
+                if (item == null) continue;
+                HomePanelView.WeatherDay day = new HomePanelView.WeatherDay();
+                day.date = item.optString("date", null);
+                day.code = item.optInt("code", 3);
+                day.description = item.optString("description", day.description);
+                day.icon = item.optString("icon", day.icon);
+                day.high = item.optInt("high", 0);
+                day.low = item.optInt("low", 0);
+                day.precipitation = item.optInt("precipitation", 0);
+                day.uv = item.optInt("uv", 0);
+                day.windKmh = item.optInt("windKmh", 0);
+                day.windDirection = item.optString("windDirection", null);
+                day.clothingTip = item.optString("clothingTip", null);
+                day.umbrellaTip = item.optString("umbrellaTip", null);
+                day.sportTip = item.optString("sportTip", null);
+                day.travelTip = item.optString("travelTip", null);
+                day.sunProtectionTip = item.optString("sunProtectionTip", null);
+                snapshot.days.add(day);
+            }
+        }
+        return snapshot;
     }
 
     private HomePanelView.WeatherSnapshot fetchWeather(Location location) throws Exception {
