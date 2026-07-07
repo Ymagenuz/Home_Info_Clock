@@ -19,6 +19,8 @@ The existing app is a native Android project:
 
 The rebuild should avoid a line-by-line port of `HomePanelView.java`. The main value of moving to Flutter is to separate platform services, app state, widgets, and custom painters.
 
+Flutter should be used as a Flutter-first UI framework, not as a new place to recreate one large canvas. The layout, state-driven rendering, transitions, paging, text fitting, and responsive sizing should use Flutter's widget and constraint system wherever possible.
+
 ## Recommended Approach
 
 Use a full Flutter rebuild with structured feature parity.
@@ -93,6 +95,19 @@ lib/
 `HomeController` coordinates location, weather refresh, battery updates, current time ticks, simple mode, and panel pages. `TimerController` owns timer persistence and countdown behavior.
 
 The UI will prefer normal Flutter widgets for layout and text, with `CustomPainter` used for the analog clock, colored weather icons, metric rings, and timer rings.
+
+## Flutter-First Architecture
+
+The implementation should maximize Flutter's architecture and layout strengths:
+
+- Use declarative widgets for panels, rows, metric cells, advice lists, buttons, overlays, and empty/error states.
+- Use `LayoutBuilder`, `MediaQuery`, `Flex`, `Expanded`, `AspectRatio`, `FittedBox`, and constrained boxes for responsive landscape layout.
+- Use `PageView` or page controllers for left, center, and right panel paging instead of hand-writing horizontal drag physics.
+- Use Flutter animation primitives such as `AnimationController`, `AnimatedSwitcher`, `AnimatedOpacity`, and custom transitions for simple mode, refresh rebound, page motion, and timer completion feedback.
+- Use `CustomPainter` only for visuals that are naturally drawn: analog clock hands and marks, weather icons, metric rings, and timer rings.
+- Keep each visual unit small enough to test and reason about independently; avoid rebuilding a single monolithic painter that owns layout, gestures, state, and rendering.
+
+For this app, Flutter's layout model is expected to be simpler and more maintainable than the current Java custom `View`. Java `Canvas` gives precise drawing control, but every text measurement, touch threshold, page animation, and responsive layout rule must be manually maintained. Flutter can express most of this screen as composable widgets and constraints, which should make the final UI easier to refine and less likely to overlap on different landscape devices.
 
 ## Flutter Project Layout
 
@@ -197,6 +212,8 @@ Visual language:
 - Text sizes scale from layout constraints, not viewport-width formulas.
 - No marketing landing page and no instructional overlay as the first screen.
 
+Layout implementation should lean on Flutter composition rather than absolute positioning. Absolute coordinates are acceptable inside focused painters, but panel layout should be constraint-driven so the same code adapts cleanly to phones, tablets, and emulator sizes.
+
 ## Interactions
 
 The Flutter app should preserve the current interaction model:
@@ -258,5 +275,6 @@ The rebuild is complete when:
 - The Android debug APK builds.
 - The app opens directly into the landscape information clock.
 - The main panels, simple mode, timer, and tomorrow advice render without overlap on landscape phone/tablet sizes.
+- The UI is primarily composed from Flutter widgets and layout primitives, with `CustomPainter` limited to focused drawing components.
 - Location, battery, weather cache, weather refresh, and Bilibili shortcut have working Flutter implementations or clearly documented platform fallbacks.
 - Tests and analysis pass, or any remaining environment-specific blocker is documented with exact command output.
