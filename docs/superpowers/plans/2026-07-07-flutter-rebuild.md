@@ -108,6 +108,7 @@ test/
 - Create: `analysis_options.yaml`
 - Create: `lib/main.dart`
 - Create: `lib/app.dart`
+- Modify: `test/widget_test.dart`
 - Modify: `.gitignore`
 - Modify: `README.md`
 - Generated: `android/`
@@ -228,7 +229,24 @@ class HomeInfoClockApp extends StatelessWidget {
 }
 ```
 
-- [ ] **Step 6: Configure dependencies**
+- [ ] **Step 6: Replace generated smoke test**
+
+Set `test/widget_test.dart`:
+
+```dart
+import 'package:flutter_test/flutter_test.dart';
+import 'package:home_info_clock/app.dart';
+
+void main() {
+  testWidgets('HomeInfoClockApp renders smoke title', (tester) async {
+    await tester.pumpWidget(const HomeInfoClockApp());
+
+    expect(find.text('Home Info Clock'), findsOneWidget);
+  });
+}
+```
+
+- [ ] **Step 7: Configure dependencies**
 
 Set the dependency portion of `pubspec.yaml`:
 
@@ -250,7 +268,7 @@ dev_dependencies:
   flutter_lints: ^5.0.0
 ```
 
-- [ ] **Step 7: Fetch dependencies**
+- [ ] **Step 8: Fetch dependencies**
 
 Run:
 
@@ -260,7 +278,7 @@ D:\test\flutter\bin\flutter.bat pub get
 
 Expected: `Resolving dependencies...` followed by `Got dependencies!`.
 
-- [ ] **Step 8: Verify scaffold**
+- [ ] **Step 9: Verify scaffold**
 
 Run:
 
@@ -271,7 +289,7 @@ D:\test\flutter\bin\flutter.bat test
 
 Expected: analyze has no issues; test reports all generated tests passing or reports no tests only if Flutter generated none.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 Run:
 
