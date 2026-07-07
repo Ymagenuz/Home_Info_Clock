@@ -247,7 +247,10 @@ void main() {
       config: AppConfig(
         qweatherJwtProjectId: 'project-id',
         qweatherJwtKeyId: 'key-id',
-        qweatherJwtPrivateKey: _ed25519Pkcs8Pem(seed),
+        qweatherJwtPrivateKey: _ed25519Pkcs8Pem(
+          seed,
+          publicKeyBytes: publicKey.bytes,
+        ),
       ),
       now: () => now,
     );
@@ -292,10 +295,13 @@ Map<String, dynamic> _decodeJwtJson(String value) {
       as Map<String, dynamic>;
 }
 
-String _ed25519Pkcs8Pem(List<int> seed) {
+String _ed25519Pkcs8Pem(List<int> seed, {List<int>? publicKeyBytes}) {
+  final trailingPublicKey = publicKeyBytes == null
+      ? const <int>[]
+      : <int>[0xa1, 0x23, 0x03, 0x21, 0x00, ...publicKeyBytes];
   final der = <int>[
     0x30,
-    0x2e,
+    0x2e + trailingPublicKey.length,
     0x02,
     0x01,
     0x00,
@@ -311,6 +317,7 @@ String _ed25519Pkcs8Pem(List<int> seed) {
     0x04,
     0x20,
     ...seed,
+    ...trailingPublicKey,
   ];
   return '-----BEGIN PRIVATE KEY-----\\n'
       '${base64.encode(der)}\\n'

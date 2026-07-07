@@ -168,14 +168,34 @@ class QWeatherWeatherSource implements WeatherSource {
         .replaceAll('-----END PRIVATE KEY-----', '')
         .replaceAll(RegExp(r'\s+'), '');
     final der = base64Decode(normalizedKey);
+    final rootReader = _DerReader(der);
+    final root = rootReader.readValue(0x30);
+    if (!rootReader.isDone) {
+      throw const FormatException('Unexpected trailing data in PKCS8 key');
+    }
+
+    final reader = _DerReader(root);
+    reader.readValue(0x02);
+    final algorithm = reader.readValue(0x30);
     const ed25519ObjectId = [0x06, 0x03, 0x2b, 0x65, 0x70];
-    final hasEd25519ObjectId = _containsBytes(der, ed25519ObjectId);
-    if (!hasEd25519ObjectId || der.length < 32) {
+    if (!_containsBytes(algorithm, ed25519ObjectId)) {
       throw const FormatException(
         'QWeather JWT private key must be an Ed25519 PKCS8 PEM key',
       );
     }
-    return der.sublist(der.length - 32);
+
+    final privateKey = reader.readValue(0x04);
+    if (privateKey.length == 32) {
+      return privateKey;
+    }
+    final privateKeyReader = _DerReader(privateKey);
+    final seed = privateKeyReader.readValue(0x04);
+    if (!privateKeyReader.isDone || seed.length != 32) {
+      throw const FormatException(
+        'QWeather JWT private key must contain a 32-byte Ed25519 seed',
+      );
+    }
+    return seed;
   }
 
   bool _containsBytes(List<int> value, List<int> pattern) {
@@ -290,5 +310,55 @@ class QWeatherWeatherSource implements WeatherSource {
     if (code == 900) return 0;
     if (code == 901) return 3;
     return 3;
+  }
+}
+
+class _DerReader {
+  _DerReader(this._bytes);
+
+  final List<int> _bytes;
+  int _offset = 0;
+
+  bool get isDone => _offset >= _bytes.length;
+
+  List<int> readValue(int expectedTag) {
+    if (_offset >= _bytes.length) {
+      throw const FormatException('Unexpected end of DER data');
+    }
+    final tag = _bytes[_offset];
+    _offset += 1;
+    if (tag != expectedTag) {
+      throw FormatException('Unexpected DER tag $tag');
+    }
+    final length = _readLength();
+    if (_offset + length > _bytes.length) {
+      throw const FormatException('DER length exceeds input');
+    }
+    final value = _bytes.sublist(_offset, _offset + length);
+    _offset += length;
+    return value;
+  }
+
+  int _readLength() {
+    if (_offset >= _bytes.length) {
+      throw const FormatException('Missing DER length');
+    }
+    final first = _bytes[_offset];
+    _offset += 1;
+    if ((first & 0x80) == 0) {
+      return first;
+    }
+    final byteCount = first & 0x7f;
+    if (byteCount == 0 ||
+        byteCount > 4 ||
+        _offset + byteCount > _bytes.length) {
+      throw const FormatException('Invalid DER length');
+    }
+    var length = 0;
+    for (var index = 0; index < byteCount; index += 1) {
+      length = (length << 8) | _bytes[_offset + index];
+    }
+    _offset += byteCount;
+    return length;
   }
 }

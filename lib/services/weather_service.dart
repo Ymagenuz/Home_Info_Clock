@@ -13,11 +13,13 @@ class WeatherService {
   final WeatherSource? secondaryFallback;
 
   Future<WeatherSnapshot> fetchWeather(WeatherRequest request) async {
+    WeatherSnapshot? realtime;
     try {
       final snapshot = await primary.fetch(request);
       if (snapshot.forecastAvailable && snapshot.days.length > 1) {
         return snapshot;
       }
+      realtime = snapshot;
     } catch (_) {
       // Fall through to the next source.
     }
@@ -25,6 +27,9 @@ class WeatherService {
     try {
       final snapshot = await fallback.fetch(request);
       if (snapshot.days.isNotEmpty) {
+        if (realtime != null) {
+          return _mergeRealtimeWithForecast(realtime, snapshot);
+        }
         return snapshot;
       }
     } catch (_) {
@@ -33,8 +38,41 @@ class WeatherService {
 
     final last = secondaryFallback;
     if (last != null) {
-      return last.fetch(request);
+      try {
+        final snapshot = await last.fetch(request);
+        if (realtime != null && snapshot.days.isNotEmpty) {
+          return _mergeRealtimeWithForecast(realtime, snapshot);
+        }
+        return snapshot;
+      } catch (_) {
+        if (realtime != null) {
+          return realtime;
+        }
+        rethrow;
+      }
+    }
+    if (realtime != null) {
+      return realtime;
     }
     return fallback.fetch(request);
+  }
+
+  WeatherSnapshot _mergeRealtimeWithForecast(
+    WeatherSnapshot realtime,
+    WeatherSnapshot forecast,
+  ) {
+    return forecast.copyWith(
+      locationLabel: realtime.locationLabel,
+      updatedAt: realtime.updatedAt,
+      currentTemp: realtime.currentTemp,
+      apparentTemp: realtime.apparentTemp,
+      humidity: realtime.humidity,
+      windKmh: realtime.windKmh,
+      currentCode: realtime.currentCode,
+      currentDescription: realtime.currentDescription,
+      sourceLabel: '\u5b9e\u65f6+\u9884\u62a5',
+      reportTimeLabel: realtime.reportTimeLabel,
+      forecastAvailable: true,
+    );
   }
 }

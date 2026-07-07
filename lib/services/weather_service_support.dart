@@ -20,10 +20,11 @@ List<dynamic> asList(Object? value, String field) {
 
 int roundNum(Object? value, [int fallback = 0]) {
   if (value is num) {
-    return value.round();
+    return value.isFinite ? value.round() : fallback;
   }
   if (value is String && value.trim().isNotEmpty) {
-    return num.parse(value.trim()).round();
+    final parsed = num.tryParse(value.trim());
+    return parsed != null && parsed.isFinite ? parsed.round() : fallback;
   }
   return fallback;
 }
@@ -33,20 +34,22 @@ int intValue(Object? value, [int fallback = 0]) {
     return value;
   }
   if (value is num) {
-    return value.round();
+    return value.isFinite ? value.round() : fallback;
   }
   if (value is String && value.trim().isNotEmpty) {
-    return num.parse(value.trim()).round();
+    final parsed = num.tryParse(value.trim());
+    return parsed != null && parsed.isFinite ? parsed.round() : fallback;
   }
   return fallback;
 }
 
 num numValue(Object? value, [num fallback = 0]) {
   if (value is num) {
-    return value;
+    return value.isFinite ? value : fallback;
   }
   if (value is String && value.trim().isNotEmpty) {
-    return num.parse(value.trim());
+    final parsed = num.tryParse(value.trim());
+    return parsed != null && parsed.isFinite ? parsed : fallback;
   }
   return fallback;
 }
