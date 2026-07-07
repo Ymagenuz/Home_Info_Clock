@@ -1,22 +1,55 @@
+import 'dart:convert';
+
+import 'package:cryptography/cryptography.dart';
+
 import '../models/app_config.dart';
 import '../models/weather.dart';
 import 'http_json_client.dart';
 import 'weather_service_support.dart';
 import 'weather_source.dart';
 
+typedef QWeatherJwtSigner =
+    Future<String> Function(QWeatherJwtSigningRequest request);
+
+class QWeatherJwtSigningRequest {
+  const QWeatherJwtSigningRequest({
+    required this.keyId,
+    required this.projectId,
+    required this.privateKeyPem,
+    required this.issuedAtSeconds,
+    required this.expiresAtSeconds,
+    required this.signingInput,
+  });
+
+  final String keyId;
+  final String projectId;
+  final String privateKeyPem;
+  final int issuedAtSeconds;
+  final int expiresAtSeconds;
+  final String signingInput;
+}
+
 class QWeatherWeatherSource implements WeatherSource {
-  const QWeatherWeatherSource({required this.client, required this.config});
+  const QWeatherWeatherSource({
+    required this.client,
+    required this.config,
+    this.jwtSigner,
+    this.now = DateTime.now,
+  });
 
   final JsonHttpClient client;
   final AppConfig config;
+  final QWeatherJwtSigner? jwtSigner;
+  final DateTime Function() now;
 
   @override
   Future<WeatherSnapshot> fetch(WeatherRequest request) async {
     final locationParam =
         '${request.longitude.toStringAsFixed(2)},${request.latitude.toStringAsFixed(2)}';
     final basePath = '/v7';
-    final headers = _authHeaders();
+    final headers = await _authHeaders();
     final host = config.qweatherApiHost;
+    final fetchedAt = now();
 
     final nowRoot = await _readQWeatherJson(
       Uri.https(host, '$basePath/weather/now', {
@@ -43,23 +76,25 @@ class QWeatherWeatherSource implements WeatherSource {
       headers,
     );
 
-    final now = asMap(nowRoot['now'], 'now');
-    final currentCode = _normalizeQWeatherIcon(stringValue(now['icon'], '999'));
+    final current = asMap(nowRoot['now'], 'now');
+    final currentCode = _normalizeQWeatherIcon(
+      stringValue(current['icon'], '999'),
+    );
 
     return WeatherSnapshot(
       locationLabel: request.locationLabel,
-      updatedAt: DateTime.now(),
-      currentTemp: intValue(now['temp']),
-      apparentTemp: intValue(now['feelsLike'], intValue(now['temp'])),
-      humidity: intValue(now['humidity']),
-      windKmh: intValue(now['windSpeed']),
+      updatedAt: fetchedAt,
+      currentTemp: intValue(current['temp']),
+      apparentTemp: intValue(current['feelsLike'], intValue(current['temp'])),
+      humidity: intValue(current['humidity']),
+      windKmh: intValue(current['windSpeed']),
       currentCode: currentCode,
       currentDescription: stringValue(
-        now['text'],
+        current['text'],
         weatherDescription(currentCode),
       ),
       sourceLabel: '\u548c\u98ce\u9884\u62a5',
-      reportTimeLabel: formatHm(DateTime.now()),
+      reportTimeLabel: formatHm(fetchedAt),
       forecastAvailable: true,
       days: _parseDailyForecast(
         asMap(dailyRoot, 'dailyRoot'),
@@ -68,16 +103,98 @@ class QWeatherWeatherSource implements WeatherSource {
     );
   }
 
-  Map<String, String> _authHeaders() {
+  Future<Map<String, String>> _authHeaders() async {
     if (config.hasQWeatherApiKey) {
       return {'X-QW-Api-Key': config.qweatherApiKey.trim()};
     }
     if (config.hasQWeatherJwtConfig) {
-      throw UnimplementedError(
-        'JWT-authenticated QWeather requests are not implemented',
-      );
+      return {'Authorization': 'Bearer ${await _buildJwt()}'};
     }
     throw StateError('weather forecast unavailable');
+  }
+
+  Future<String> _buildJwt() async {
+    final nowSeconds = now().millisecondsSinceEpoch ~/ 1000;
+    final issuedAtSeconds = nowSeconds - 30;
+    final expiresAtSeconds = nowSeconds + (23 * 60 * 60);
+    final header = jsonEncode(<String, String>{
+      'alg': 'EdDSA',
+      'kid': config.qweatherJwtKeyId.trim(),
+    });
+    final payload = jsonEncode(<String, Object>{
+      'sub': config.qweatherJwtProjectId.trim(),
+      'iat': issuedAtSeconds,
+      'exp': expiresAtSeconds,
+    });
+    final signingInput =
+        '${_base64UrlEncodeUtf8(header)}.${_base64UrlEncodeUtf8(payload)}';
+    final signer = jwtSigner ?? _defaultJwtSigner;
+    return signer(
+      QWeatherJwtSigningRequest(
+        keyId: config.qweatherJwtKeyId.trim(),
+        projectId: config.qweatherJwtProjectId.trim(),
+        privateKeyPem: config.qweatherJwtPrivateKey,
+        issuedAtSeconds: issuedAtSeconds,
+        expiresAtSeconds: expiresAtSeconds,
+        signingInput: signingInput,
+      ),
+    );
+  }
+
+  Future<String> _defaultJwtSigner(QWeatherJwtSigningRequest request) async {
+    final algorithm = Ed25519();
+    final keyPair = await algorithm.newKeyPairFromSeed(
+      _ed25519PrivateSeedFromPkcs8Pem(request.privateKeyPem),
+    );
+    final signature = await algorithm.sign(
+      utf8.encode(request.signingInput),
+      keyPair: keyPair,
+    );
+    return '${request.signingInput}.${_base64UrlEncodeBytes(signature.bytes)}';
+  }
+
+  String _base64UrlEncodeUtf8(String value) {
+    return base64Url.encode(utf8.encode(value)).replaceAll('=', '');
+  }
+
+  String _base64UrlEncodeBytes(List<int> value) {
+    return base64Url.encode(value).replaceAll('=', '');
+  }
+
+  List<int> _ed25519PrivateSeedFromPkcs8Pem(String privateKeyPem) {
+    final normalizedKey = privateKeyPem
+        .replaceAll('\\n', '\n')
+        .replaceAll('-----BEGIN PRIVATE KEY-----', '')
+        .replaceAll('-----END PRIVATE KEY-----', '')
+        .replaceAll(RegExp(r'\s+'), '');
+    final der = base64Decode(normalizedKey);
+    const ed25519ObjectId = [0x06, 0x03, 0x2b, 0x65, 0x70];
+    final hasEd25519ObjectId = _containsBytes(der, ed25519ObjectId);
+    if (!hasEd25519ObjectId || der.length < 32) {
+      throw const FormatException(
+        'QWeather JWT private key must be an Ed25519 PKCS8 PEM key',
+      );
+    }
+    return der.sublist(der.length - 32);
+  }
+
+  bool _containsBytes(List<int> value, List<int> pattern) {
+    if (pattern.isEmpty || pattern.length > value.length) {
+      return false;
+    }
+    for (var start = 0; start <= value.length - pattern.length; start += 1) {
+      var matches = true;
+      for (var offset = 0; offset < pattern.length; offset += 1) {
+        if (value[start + offset] != pattern[offset]) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) {
+        return true;
+      }
+    }
+    return false;
   }
 
   Future<Map<String, dynamic>> _readQWeatherJson(
