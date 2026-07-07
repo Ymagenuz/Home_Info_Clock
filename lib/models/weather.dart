@@ -41,6 +41,36 @@ class WeatherSnapshot {
 
   WeatherDay? get today => days.isEmpty ? null : days.first;
   WeatherDay? get tomorrow => days.length < 2 ? null : days[1];
+
+  WeatherSnapshot copyWith({
+    String? locationLabel,
+    DateTime? updatedAt,
+    int? currentTemp,
+    int? apparentTemp,
+    int? humidity,
+    int? windKmh,
+    int? currentCode,
+    String? currentDescription,
+    String? sourceLabel,
+    String? reportTimeLabel,
+    bool? forecastAvailable,
+    List<WeatherDay>? days,
+  }) {
+    return WeatherSnapshot(
+      locationLabel: locationLabel ?? this.locationLabel,
+      updatedAt: updatedAt ?? this.updatedAt,
+      currentTemp: currentTemp ?? this.currentTemp,
+      apparentTemp: apparentTemp ?? this.apparentTemp,
+      humidity: humidity ?? this.humidity,
+      windKmh: windKmh ?? this.windKmh,
+      currentCode: currentCode ?? this.currentCode,
+      currentDescription: currentDescription ?? this.currentDescription,
+      sourceLabel: sourceLabel ?? this.sourceLabel,
+      reportTimeLabel: reportTimeLabel ?? this.reportTimeLabel,
+      forecastAvailable: forecastAvailable ?? this.forecastAvailable,
+      days: days ?? this.days,
+    );
+  }
 }
 
 class WeatherDay {
@@ -79,4 +109,40 @@ class WeatherDay {
   final String? sunProtectionTip;
 
   int get temperatureRange => (high - low).abs();
+
+  WeatherDay copyWith({
+    String? date,
+    int? code,
+    String? description,
+    String? icon,
+    int? high,
+    int? low,
+    int? precipitation,
+    int? uv,
+    int? windKmh,
+    String? windDirection,
+    String? clothingTip,
+    String? umbrellaTip,
+    String? sportTip,
+    String? travelTip,
+    String? sunProtectionTip,
+  }) {
+    return WeatherDay(
+      date: date ?? this.date,
+      code: code ?? this.code,
+      description: description ?? this.description,
+      icon: icon ?? this.icon,
+      high: high ?? this.high,
+      low: low ?? this.low,
+      precipitation: precipitation ?? this.precipitation,
+      uv: uv ?? this.uv,
+      windKmh: windKmh ?? this.windKmh,
+      windDirection: windDirection ?? this.windDirection,
+      clothingTip: clothingTip ?? this.clothingTip,
+      umbrellaTip: umbrellaTip ?? this.umbrellaTip,
+      sportTip: sportTip ?? this.sportTip,
+      travelTip: travelTip ?? this.travelTip,
+      sunProtectionTip: sunProtectionTip ?? this.sunProtectionTip,
+    );
+  }
 }
