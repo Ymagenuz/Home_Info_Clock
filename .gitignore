@@ -44,3 +44,16 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local tooling and task metadata
+.worktrees
+.worktrees/
+.superpowers
+.superpowers/
+.tools/
+/apkcheck/
+/assets/
+build/
+app/build/
+local.properties
+*.apk
