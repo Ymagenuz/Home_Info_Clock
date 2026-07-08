@@ -26,6 +26,25 @@ class WeatherSnapshot {
     this.days = const [],
   });
 
+  factory WeatherSnapshot.fromJson(Map<String, dynamic> json) {
+    return WeatherSnapshot(
+      locationLabel: json['locationLabel'] as String,
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+      currentTemp: (json['currentTemp'] as num).toInt(),
+      apparentTemp: (json['apparentTemp'] as num).toInt(),
+      humidity: (json['humidity'] as num).toInt(),
+      windKmh: (json['windKmh'] as num).toInt(),
+      currentCode: (json['currentCode'] as num).toInt(),
+      currentDescription: json['currentDescription'] as String,
+      sourceLabel: json['sourceLabel'] as String,
+      reportTimeLabel: json['reportTimeLabel'] as String,
+      forecastAvailable: json['forecastAvailable'] as bool? ?? true,
+      days: (json['days'] as List<dynamic>? ?? const [])
+          .map((day) => WeatherDay.fromJson(day as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
   final String locationLabel;
   final DateTime updatedAt;
   final int currentTemp;
@@ -71,6 +90,23 @@ class WeatherSnapshot {
       days: days ?? this.days,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'locationLabel': locationLabel,
+      'updatedAt': updatedAt.toIso8601String(),
+      'currentTemp': currentTemp,
+      'apparentTemp': apparentTemp,
+      'humidity': humidity,
+      'windKmh': windKmh,
+      'currentCode': currentCode,
+      'currentDescription': currentDescription,
+      'sourceLabel': sourceLabel,
+      'reportTimeLabel': reportTimeLabel,
+      'forecastAvailable': forecastAvailable,
+      'days': days.map((day) => day.toJson()).toList(),
+    };
+  }
 }
 
 class WeatherDay {
@@ -91,6 +127,26 @@ class WeatherDay {
     this.travelTip,
     this.sunProtectionTip,
   });
+
+  factory WeatherDay.fromJson(Map<String, dynamic> json) {
+    return WeatherDay(
+      date: json['date'] as String,
+      code: (json['code'] as num).toInt(),
+      description: json['description'] as String,
+      icon: json['icon'] as String? ?? '',
+      high: (json['high'] as num).toInt(),
+      low: (json['low'] as num).toInt(),
+      precipitation: (json['precipitation'] as num?)?.toInt() ?? 0,
+      uv: (json['uv'] as num?)?.toInt() ?? 0,
+      windKmh: (json['windKmh'] as num?)?.toInt() ?? 0,
+      windDirection: json['windDirection'] as String?,
+      clothingTip: json['clothingTip'] as String?,
+      umbrellaTip: json['umbrellaTip'] as String?,
+      sportTip: json['sportTip'] as String?,
+      travelTip: json['travelTip'] as String?,
+      sunProtectionTip: json['sunProtectionTip'] as String?,
+    );
+  }
 
   final String date;
   final int code;
@@ -144,5 +200,25 @@ class WeatherDay {
       travelTip: travelTip ?? this.travelTip,
       sunProtectionTip: sunProtectionTip ?? this.sunProtectionTip,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'date': date,
+      'code': code,
+      'description': description,
+      'icon': icon,
+      'high': high,
+      'low': low,
+      'precipitation': precipitation,
+      'uv': uv,
+      'windKmh': windKmh,
+      'windDirection': windDirection,
+      'clothingTip': clothingTip,
+      'umbrellaTip': umbrellaTip,
+      'sportTip': sportTip,
+      'travelTip': travelTip,
+      'sunProtectionTip': sunProtectionTip,
+    };
   }
 }

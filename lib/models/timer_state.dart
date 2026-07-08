@@ -34,6 +34,19 @@ class TimerState {
     return TimerState(isRunning: true, endsAt: endsAt);
   }
 
+  factory TimerState.fromJson(Map<String, dynamic> json) {
+    return TimerState(
+      hours: (json['hours'] as num?)?.toInt() ?? 0,
+      minutes: (json['minutes'] as num?)?.toInt() ?? 0,
+      seconds: (json['seconds'] as num?)?.toInt() ?? 0,
+      isRunning: json['isRunning'] as bool? ?? false,
+      endsAt: json['endsAt'] == null
+          ? null
+          : DateTime.parse(json['endsAt'] as String),
+      isFinished: json['isFinished'] as bool? ?? false,
+    );
+  }
+
   final int hours;
   final int minutes;
   final int seconds;
@@ -79,5 +92,16 @@ class TimerState {
       endsAt: clearEndsAt ? null : endsAt ?? this.endsAt,
       isFinished: isFinished ?? this.isFinished,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'hours': hours,
+      'minutes': minutes,
+      'seconds': seconds,
+      'isRunning': isRunning,
+      'endsAt': endsAt?.toIso8601String(),
+      'isFinished': isFinished,
+    };
   }
 }
