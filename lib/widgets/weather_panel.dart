@@ -13,8 +13,9 @@ class WeatherPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final snapshot = weather;
-    final location = _briefText(snapshot?.locationLabel, '绛夊緟瀹氫綅');
-    final description = _briefText(snapshot?.currentDescription, '绛夊緟澶╂皵');
+    final location = snapshot?.locationLabel ?? '\u7b49\u5f85\u5b9a\u4f4d';
+    final description =
+        snapshot?.currentDescription ?? '\u7b49\u5f85\u5929\u6c14';
     final temp = snapshot == null ? '--' : '${snapshot.currentTemp}\u00B0';
     final feelsLike = snapshot == null
         ? '--'
@@ -143,14 +144,4 @@ class WeatherPanel extends StatelessWidget {
       ),
     );
   }
-}
-
-String _briefText(String? value, String fallback) {
-  return switch (value) {
-    null => fallback,
-    '\u4e0a\u6d77 \u6d66\u4e1c' => '涓婃捣 娴︿笢',
-    '\u591a\u4e91' => '澶氫簯',
-    '\u5c0f\u96e8' => '灏忛洦',
-    _ => value,
-  };
 }

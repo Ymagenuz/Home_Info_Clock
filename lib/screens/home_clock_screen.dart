@@ -62,9 +62,17 @@ class _FullDashboard extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final boundedWidth = constraints.maxWidth.clamp(900.0, 1600.0);
-        final leftWidth = (boundedWidth * 0.27).clamp(220.0, 360.0);
-        final rightWidth = (boundedWidth * 0.31).clamp(250.0, 410.0);
+        final width = constraints.maxWidth;
+        final boundedWidth = width.clamp(700.0, 1600.0);
+        final compact = width < 900.0;
+        final leftWidth = (boundedWidth * 0.27).clamp(
+          compact ? 190.0 : 220.0,
+          360.0,
+        );
+        final rightWidth = (boundedWidth * 0.31).clamp(
+          compact ? 220.0 : 250.0,
+          410.0,
+        );
 
         return Row(
           children: [
@@ -78,6 +86,7 @@ class _FullDashboard extends StatelessWidget {
             const _Separator(),
             Expanded(
               child: PageView(
+                key: const ValueKey('home-center-page-view'),
                 children: [
                   ClockPanel(onToggleMode: homeController.toggleSimpleMode),
                   TimerPanel(controller: timerController),
@@ -88,35 +97,23 @@ class _FullDashboard extends StatelessWidget {
             SizedBox(
               width: rightWidth,
               child: PageView(
+                key: const ValueKey('home-right-page-view'),
                 children: [
-                  _TomorrowActionsPage(homeController: homeController),
-                  const Center(child: Text('棰勭暀椤?')),
+                  Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: TomorrowPanel(weather: homeController.weather),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.all(18),
+                    child: QuickActionsPanel(),
+                  ),
+                  const Center(child: Text('\u9884\u7559\u9875')),
                 ],
               ),
             ),
           ],
         );
       },
-    );
-  }
-}
-
-class _TomorrowActionsPage extends StatelessWidget {
-  const _TomorrowActionsPage({required this.homeController});
-
-  final HomeController homeController;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        children: [
-          Expanded(child: TomorrowPanel(weather: homeController.weather)),
-          const SizedBox(height: 14),
-          const SizedBox(height: 164, child: QuickActionsPanel()),
-        ],
-      ),
     );
   }
 }

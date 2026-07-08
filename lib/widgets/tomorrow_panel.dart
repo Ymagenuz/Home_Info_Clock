@@ -11,7 +11,8 @@ class TomorrowPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tomorrow = weather?.tomorrow;
-    final description = _briefText(tomorrow?.description, '绛夊緟澶╂皵鏁版嵁');
+    final description =
+        tomorrow?.description ?? '\u7b49\u5f85\u5929\u6c14\u6570\u636e';
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -105,14 +106,4 @@ class TomorrowPanel extends StatelessWidget {
       ),
     );
   }
-}
-
-String _briefText(String? value, String fallback) {
-  return switch (value) {
-    null => fallback,
-    '\u4e0a\u6d77 \u6d66\u4e1c' => '涓婃捣 娴︿笢',
-    '\u591a\u4e91' => '澶氫簯',
-    '\u5c0f\u96e8' => '灏忛洦',
-    _ => value,
-  };
 }

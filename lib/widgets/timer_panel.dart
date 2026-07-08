@@ -10,134 +10,96 @@ class TimerPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = controller.state;
-    final units = state.unitsAt(DateTime.now());
-    final actionLabel = state.isRunning ? 'Clear' : 'Start';
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final state = controller.state;
+        final units = state.unitsAt(DateTime.now());
+        final statusLabel = state.isFinished
+            ? 'Finished'
+            : state.isRunning
+            ? 'Running'
+            : 'Ready';
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Timer',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    statusLabel,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: const Color(0xFF93E5AB),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
               Expanded(
-                child: Text(
-                  'Timer',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                child: Center(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      '${_twoDigits(units.hours)}:${_twoDigits(units.minutes)}:${_twoDigits(units.seconds)}',
+                      style: Theme.of(context).textTheme.displayLarge?.copyWith(
+                        fontSize: 104,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
                   ),
                 ),
               ),
-              FilledButton.icon(
-                onPressed: () => controller.startOrClear(DateTime.now()),
-                icon: Icon(state.isRunning ? Icons.clear : Icons.play_arrow),
-                label: Text(actionLabel),
-              ),
-            ],
-          ),
-          Expanded(
-            child: Center(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  '${_twoDigits(units.hours)}:${_twoDigits(units.minutes)}:${_twoDigits(units.seconds)}',
-                  style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                    fontSize: 104,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 92,
+                      child: MetricCell(
+                        label: 'Hours',
+                        value: _twoDigits(units.hours),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            ),
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: _TimerUnitControl(
-                  label: 'Hours',
-                  value: units.hours,
-                  onMinus: () =>
-                      controller.setUnit(TimerUnit.hours, state.hours - 1),
-                  onPlus: () =>
-                      controller.setUnit(TimerUnit.hours, state.hours + 1),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _TimerUnitControl(
-                  label: 'Minutes',
-                  value: units.minutes,
-                  onMinus: () =>
-                      controller.setUnit(TimerUnit.minutes, state.minutes - 1),
-                  onPlus: () =>
-                      controller.setUnit(TimerUnit.minutes, state.minutes + 1),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _TimerUnitControl(
-                  label: 'Seconds',
-                  value: units.seconds,
-                  onMinus: () =>
-                      controller.setUnit(TimerUnit.seconds, state.seconds - 1),
-                  onPlus: () =>
-                      controller.setUnit(TimerUnit.seconds, state.seconds + 1),
-                ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: SizedBox(
+                      height: 92,
+                      child: MetricCell(
+                        label: 'Minutes',
+                        value: _twoDigits(units.minutes),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: SizedBox(
+                      height: 92,
+                      child: MetricCell(
+                        label: 'Seconds',
+                        value: _twoDigits(units.seconds),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TimerUnitControl extends StatelessWidget {
-  const _TimerUnitControl({
-    required this.label,
-    required this.value,
-    required this.onMinus,
-    required this.onPlus,
-  });
-
-  final String label;
-  final int value;
-  final VoidCallback onMinus;
-  final VoidCallback onPlus;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        SizedBox(
-          height: 92,
-          child: MetricCell(label: label, value: _twoDigits(value)),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: IconButton.filledTonal(
-                tooltip: 'Decrease $label',
-                onPressed: onMinus,
-                icon: const Icon(Icons.remove),
-              ),
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: IconButton.filledTonal(
-                tooltip: 'Increase $label',
-                onPressed: onPlus,
-                icon: const Icon(Icons.add),
-              ),
-            ),
-          ],
-        ),
-      ],
+        );
+      },
     );
   }
 }
