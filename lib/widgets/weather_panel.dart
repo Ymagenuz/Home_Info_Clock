@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/battery_status.dart';
 import '../models/weather.dart';
+import '../painters/weather_icon_painter.dart';
 import 'metric_cell.dart';
 
 class WeatherPanel extends StatelessWidget {
@@ -17,6 +18,7 @@ class WeatherPanel extends StatelessWidget {
     final description =
         snapshot?.currentDescription ?? '\u7b49\u5f85\u5929\u6c14';
     final temp = snapshot == null ? '--' : '${snapshot.currentTemp}\u00B0';
+    final weatherCode = snapshot?.currentCode ?? 0;
     final feelsLike = snapshot == null
         ? '--'
         : '${snapshot.apparentTemp}\u00B0';
@@ -61,10 +63,17 @@ class WeatherPanel extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(
-                        Icons.cloud_queue,
-                        size: 52,
-                        color: Color(0xFF93E5AB),
+                      SizedBox(
+                        width: 76,
+                        child: AspectRatio(
+                          aspectRatio: 1,
+                          child: CustomPaint(
+                            painter: WeatherIconPainter(
+                              weatherCode,
+                              const Color(0xFF93E5AB),
+                            ),
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 12),
                       FittedBox(

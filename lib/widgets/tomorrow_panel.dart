@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/weather.dart';
+import '../painters/weather_icon_painter.dart';
 import 'metric_cell.dart';
 
 class TomorrowPanel extends StatelessWidget {
@@ -48,10 +49,17 @@ class TomorrowPanel extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
-                      Icons.umbrella_outlined,
-                      size: 44,
-                      color: Color(0xFF7DD3FC),
+                    SizedBox(
+                      width: 64,
+                      child: AspectRatio(
+                        aspectRatio: 1,
+                        child: CustomPaint(
+                          painter: WeatherIconPainter(
+                            tomorrow?.code ?? 61,
+                            const Color(0xFF7DD3FC),
+                          ),
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 10),
                     Text(

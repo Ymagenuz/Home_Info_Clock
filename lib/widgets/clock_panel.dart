@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../painters/analog_clock_painter.dart';
+
 class ClockPanel extends StatelessWidget {
   const ClockPanel({super.key, required this.onToggleMode});
 
@@ -42,6 +44,17 @@ class ClockPanel extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: 210,
+                      maxHeight: 210,
+                    ),
+                    child: AspectRatio(
+                      aspectRatio: 1,
+                      child: CustomPaint(painter: AnalogClockPainter(now)),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
                   Text(
                     dateLabel,
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(

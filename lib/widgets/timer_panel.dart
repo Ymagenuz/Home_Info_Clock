@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../painters/timer_painter.dart';
 import '../state/timer_controller.dart';
-import 'metric_cell.dart';
 
 class TimerPanel extends StatelessWidget {
   const TimerPanel({super.key, required this.controller});
@@ -13,8 +13,9 @@ class TimerPanel extends StatelessWidget {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
+        final now = DateTime.now();
         final state = controller.state;
-        final units = state.unitsAt(DateTime.now());
+        final units = state.unitsAt(now);
         final statusLabel = state.isFinished
             ? 'Finished'
             : state.isRunning
@@ -48,58 +49,159 @@ class TimerPanel extends StatelessWidget {
                   ),
                 ],
               ),
+              const SizedBox(height: 16),
               Expanded(
                 child: Center(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      '${_twoDigits(units.hours)}:${_twoDigits(units.minutes)}:${_twoDigits(units.seconds)}',
-                      style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                        fontSize: 104,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
+                  child: AspectRatio(
+                    aspectRatio: 1,
+                    child: CustomPaint(
+                      painter: TimerPainter(state, now),
+                      child: Center(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            '${_twoDigits(units.hours)}:${_twoDigits(units.minutes)}:${_twoDigits(units.seconds)}',
+                            style: Theme.of(context).textTheme.displayLarge
+                                ?.copyWith(
+                                  fontSize: 88,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
+              const SizedBox(height: 16),
               Row(
                 children: [
                   Expanded(
-                    child: SizedBox(
-                      height: 92,
-                      child: MetricCell(
-                        label: 'Hours',
-                        value: _twoDigits(units.hours),
-                      ),
+                    child: _UnitControl(
+                      label: 'Hours',
+                      value: _twoDigits(units.hours),
+                      plusKey: const ValueKey('timer-hour-plus'),
+                      onPressed: state.isRunning
+                          ? null
+                          : () => controller.setUnit(
+                              TimerUnit.hours,
+                              state.hours + 1,
+                            ),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: SizedBox(
-                      height: 92,
-                      child: MetricCell(
-                        label: 'Minutes',
-                        value: _twoDigits(units.minutes),
-                      ),
+                    child: _UnitControl(
+                      label: 'Minutes',
+                      value: _twoDigits(units.minutes),
+                      plusKey: const ValueKey('timer-minute-plus'),
+                      onPressed: state.isRunning
+                          ? null
+                          : () => controller.setUnit(
+                              TimerUnit.minutes,
+                              state.minutes + 1,
+                            ),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: SizedBox(
-                      height: 92,
-                      child: MetricCell(
-                        label: 'Seconds',
-                        value: _twoDigits(units.seconds),
-                      ),
+                    child: _UnitControl(
+                      label: 'Seconds',
+                      value: _twoDigits(units.seconds),
+                      plusKey: const ValueKey('timer-second-plus'),
+                      onPressed: state.isRunning
+                          ? null
+                          : () => controller.setUnit(
+                              TimerUnit.seconds,
+                              state.seconds + 1,
+                            ),
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 52,
+                child: FilledButton.icon(
+                  key: const ValueKey('timer-start'),
+                  onPressed: () => controller.startOrClear(DateTime.now()),
+                  icon: Icon(state.isRunning ? Icons.clear : Icons.play_arrow),
+                  label: Text(state.isRunning ? 'Clear' : 'Start'),
+                ),
               ),
             ],
           ),
         );
       },
+    );
+  }
+}
+
+class _UnitControl extends StatelessWidget {
+  const _UnitControl({
+    required this.label,
+    required this.value,
+    required this.plusKey,
+    required this.onPressed,
+  });
+
+  final String label;
+  final String value;
+  final Key plusKey;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return SizedBox(
+      height: 112,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: const Color(0x14FFFFFF),
+          border: Border.all(color: const Color(0x22FFFFFF)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: textTheme.labelMedium?.copyWith(
+                  color: const Color(0xCCFFFFFF),
+                ),
+              ),
+              const SizedBox(height: 4),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  value,
+                  style: textTheme.headlineSmall?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              SizedBox.square(
+                dimension: 34,
+                child: IconButton.filledTonal(
+                  key: plusKey,
+                  tooltip: 'Increase $label',
+                  padding: EdgeInsets.zero,
+                  onPressed: onPressed,
+                  icon: const Icon(Icons.add, size: 20),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
