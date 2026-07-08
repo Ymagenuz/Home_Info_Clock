@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'screens/home_clock_screen.dart';
+import 'state/home_controller.dart';
+import 'state/timer_controller.dart';
+
 class HomeInfoClockApp extends StatelessWidget {
   const HomeInfoClockApp({super.key});
 
@@ -13,9 +17,9 @@ class HomeInfoClockApp extends StatelessWidget {
         useMaterial3: true,
         fontFamily: 'sans',
       ),
-      home: const Scaffold(
-        backgroundColor: Color(0xFF061016),
-        body: Center(child: Text('Home Info Clock')),
+      home: HomeClockScreen(
+        homeController: HomeController.preview(),
+        timerController: TimerController(),
       ),
     );
   }

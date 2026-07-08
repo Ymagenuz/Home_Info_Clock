@@ -1,0 +1,118 @@
+import 'package:flutter/material.dart';
+
+import '../models/weather.dart';
+import 'metric_cell.dart';
+
+class TomorrowPanel extends StatelessWidget {
+  const TomorrowPanel({super.key, required this.weather});
+
+  final WeatherSnapshot? weather;
+
+  @override
+  Widget build(BuildContext context) {
+    final tomorrow = weather?.tomorrow;
+    final description = _briefText(tomorrow?.description, '绛夊緟澶╂皵鏁版嵁');
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0x12FFFFFF),
+        border: Border.all(color: const Color(0x22FFFFFF)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.calendar_today, color: Color(0xFFFFD166)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Tomorrow',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.umbrella_outlined,
+                      size: 44,
+                      color: Color(0xFF7DD3FC),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      description,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      tomorrow == null
+                          ? '--'
+                          : '${tomorrow.low}\u00B0 / ${tomorrow.high}\u00B0',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: const Color(0xCCFFFFFF),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: MetricCell(
+                    label: 'Rain',
+                    value: tomorrow == null
+                        ? '--'
+                        : '${tomorrow.precipitation}%',
+                    icon: Icons.grain,
+                    accent: const Color(0xFF7DD3FC),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: MetricCell(
+                    label: 'UV',
+                    value: tomorrow == null ? '--' : '${tomorrow.uv}',
+                    icon: Icons.wb_sunny_outlined,
+                    accent: const Color(0xFFFFD166),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _briefText(String? value, String fallback) {
+  return switch (value) {
+    null => fallback,
+    '\u4e0a\u6d77 \u6d66\u4e1c' => '涓婃捣 娴︿笢',
+    '\u591a\u4e91' => '澶氫簯',
+    '\u5c0f\u96e8' => '灏忛洦',
+    _ => value,
+  };
+}
