@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,7 +21,23 @@ class CacheService {
   WeatherSnapshot? loadWeather() {
     final raw = preferences.getString(_weatherKey);
     if (raw == null || raw.isEmpty) return null;
-    return WeatherSnapshot.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) {
+        _clearKey(_weatherKey);
+        return null;
+      }
+      return WeatherSnapshot.fromJson(decoded);
+    } on FormatException {
+      _clearKey(_weatherKey);
+      return null;
+    } on TypeError {
+      _clearKey(_weatherKey);
+      return null;
+    } on ArgumentError {
+      _clearKey(_weatherKey);
+      return null;
+    }
   }
 
   Future<void> saveTimer(TimerState state) {
@@ -30,6 +47,26 @@ class CacheService {
   TimerState loadTimer() {
     final raw = preferences.getString(_timerKey);
     if (raw == null || raw.isEmpty) return const TimerState();
-    return TimerState.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) {
+        _clearKey(_timerKey);
+        return const TimerState();
+      }
+      return TimerState.fromJson(decoded);
+    } on FormatException {
+      _clearKey(_timerKey);
+      return const TimerState();
+    } on TypeError {
+      _clearKey(_timerKey);
+      return const TimerState();
+    } on ArgumentError {
+      _clearKey(_timerKey);
+      return const TimerState();
+    }
+  }
+
+  void _clearKey(String key) {
+    unawaited(preferences.remove(key));
   }
 }

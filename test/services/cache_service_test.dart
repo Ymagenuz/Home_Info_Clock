@@ -50,4 +50,44 @@ void main() {
     expect(restored?.locationLabel, '\u4e0a\u6d77');
     expect(restored?.today?.high, 33);
   });
+
+  test('CacheService returns null and clears corrupt weather cache', () async {
+    final preferences = await SharedPreferences.getInstance();
+    final cache = CacheService(preferences);
+
+    for (final raw in <String>[
+      '{',
+      '[]',
+      '{"locationLabel":"Shanghai","updatedAt":"bad date","currentTemp":30,"apparentTemp":33,"humidity":70,"windKmh":12,"currentCode":2,"currentDescription":"Cloudy","sourceLabel":"UAPI","reportTimeLabel":"09:00"}',
+    ]) {
+      await preferences.setString('weather_json', raw);
+
+      expect(cache.loadWeather(), isNull, reason: raw);
+      expect(preferences.getString('weather_json'), isNull, reason: raw);
+    }
+  });
+
+  test(
+    'CacheService returns default timer and clears corrupt timer cache',
+    () async {
+      final preferences = await SharedPreferences.getInstance();
+      final cache = CacheService(preferences);
+
+      for (final raw in <String>[
+        '{',
+        '[]',
+        '{"isRunning":true,"endsAt":"bad date"}',
+      ]) {
+        await preferences.setString('timer_json', raw);
+
+        final restored = cache.loadTimer();
+
+        expect(restored.totalSeconds, 0, reason: raw);
+        expect(restored.isRunning, isFalse, reason: raw);
+        expect(restored.endsAt, isNull, reason: raw);
+        expect(restored.isFinished, isFalse, reason: raw);
+        expect(preferences.getString('timer_json'), isNull, reason: raw);
+      }
+    },
+  );
 }
