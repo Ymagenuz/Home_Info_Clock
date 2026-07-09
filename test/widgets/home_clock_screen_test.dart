@@ -43,6 +43,40 @@ void main() {
     expect(find.text('\u9884\u7559\u9875'), findsOneWidget);
   });
 
+  testWidgets('full dashboard fits clock and timer pages at 700x360', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(700, 360));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeClockScreen(
+          homeController: HomeController.preview(),
+          timerController: TimerController(
+            initial: const TimerState(isFinished: true),
+          ),
+          now: () => DateTime(2026, 7, 9, 9),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Home Info Clock'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    final centerPageView = find.byKey(const ValueKey('home-center-page-view'));
+    await tester.drag(centerPageView, const Offset(-300, 0));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Timer'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('timer-finished-overlay')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('one periodic driver updates clocks and finishes countdown', (
     tester,
   ) async {
@@ -81,6 +115,11 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
 
     expect(timerController.state.isFinished, isTrue);
+    expect(
+      find.byKey(const ValueKey('timer-finished-overlay')),
+      findsOneWidget,
+    );
+    expect(find.text('Timer finished'), findsOneWidget);
 
     homeController.toggleSimpleMode();
     await tester.pumpAndSettle();

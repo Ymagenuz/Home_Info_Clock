@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:home_info_clock/app.dart';
 import 'package:home_info_clock/models/app_config.dart';
@@ -8,6 +10,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'support/live_test_fakes.dart';
 
 void main() {
+  test('production weather wiring excludes QWeather fallback', () {
+    final appSource = File('lib/app.dart').readAsStringSync();
+
+    expect(appSource, isNot(contains('qweather_weather_source.dart')));
+    expect(appSource, isNot(contains('secondaryFallback:')));
+  });
+
   testWidgets('HomeInfoClockApp renders smoke title', (tester) async {
     await tester.pumpWidget(HomeInfoClockApp.preview());
 

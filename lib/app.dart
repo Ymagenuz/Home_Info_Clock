@@ -9,7 +9,6 @@ import 'services/cache_service.dart';
 import 'services/http_json_client.dart';
 import 'services/open_meteo_weather_source.dart';
 import 'services/platform_service.dart';
-import 'services/qweather_weather_source.dart';
 import 'services/uapi_weather_source.dart';
 import 'services/weather_service.dart';
 import 'state/home_controller.dart';
@@ -97,9 +96,6 @@ class _HomeInfoClockAppState extends State<HomeInfoClockApp> {
     final weatherService = WeatherService(
       primary: UapiWeatherSource(client: httpClient, config: config),
       fallback: OpenMeteoWeatherSource(client: httpClient),
-      secondaryFallback: config.hasQWeatherApiKey || config.hasQWeatherJwtConfig
-          ? QWeatherWeatherSource(client: httpClient, config: config)
-          : null,
     );
     final adviceService = AiAdviceService(client: httpClient, config: config);
     return (request) async {
