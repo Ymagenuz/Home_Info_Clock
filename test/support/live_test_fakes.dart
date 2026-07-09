@@ -62,17 +62,25 @@ class FakePlatformGateway implements PlatformGateway {
     ),
     this.permissionGranted = true,
     this.initialBattery = const BatteryStatus(level: 55, isCharging: false),
+    this.readBatteryStatusOverride,
+    this.requestLocationPermissionOverride,
+    this.resolveLocationOverride,
   });
 
   final DeviceLocation? location;
   final bool permissionGranted;
   final BatteryStatus initialBattery;
+  final Future<BatteryStatus> Function()? readBatteryStatusOverride;
+  final Future<bool> Function()? requestLocationPermissionOverride;
+  final Future<DeviceLocation?> Function()? resolveLocationOverride;
   final StreamController<BatteryStatus> batteryUpdates =
       StreamController<BatteryStatus>.broadcast();
 
   int permissionRequests = 0;
   int locationResolves = 0;
   int openBilibiliCalls = 0;
+  int batteryReads = 0;
+  int batteryWatches = 0;
 
   @override
   Future<void> enterKioskMode() async {}
@@ -84,22 +92,29 @@ class FakePlatformGateway implements PlatformGateway {
   }
 
   @override
-  Future<BatteryStatus> readBatteryStatus() async => initialBattery;
+  Future<BatteryStatus> readBatteryStatus() {
+    batteryReads += 1;
+    return readBatteryStatusOverride?.call() ??
+        Future<BatteryStatus>.value(initialBattery);
+  }
 
   @override
   Future<bool> requestLocationPermission() async {
     permissionRequests += 1;
-    return permissionGranted;
+    return await requestLocationPermissionOverride?.call() ?? permissionGranted;
   }
 
   @override
   Future<DeviceLocation?> resolveLocation() async {
     locationResolves += 1;
-    return location;
+    return await resolveLocationOverride?.call() ?? location;
   }
 
   @override
-  Stream<BatteryStatus> watchBatteryStatus() => batteryUpdates.stream;
+  Stream<BatteryStatus> watchBatteryStatus() {
+    batteryWatches += 1;
+    return batteryUpdates.stream;
+  }
 
   Future<void> close() => batteryUpdates.close();
 }

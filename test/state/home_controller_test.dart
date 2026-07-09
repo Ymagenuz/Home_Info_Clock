@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:home_info_clock/models/battery_status.dart';
 import 'package:home_info_clock/models/timer_state.dart';
 import 'package:home_info_clock/models/weather.dart';
 import 'package:home_info_clock/services/cache_service.dart';
+import 'package:home_info_clock/services/platform_service.dart';
 import 'package:home_info_clock/state/home_controller.dart';
 import 'package:home_info_clock/state/timer_controller.dart';
 
@@ -153,6 +156,221 @@ void main() {
     expect(cache.loadWeather()?.locationLabel, 'Fetched City');
   });
 
+  test(
+    'concurrent initial manual and forced refresh share one live request',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final preferences = await SharedPreferences.getInstance();
+      final cache = _RecordingCacheService(preferences);
+      final permission = Completer<bool>();
+      final location = Completer<DeviceLocation?>();
+      final fetch = Completer<WeatherSnapshot>();
+      final platform = FakePlatformGateway(
+        requestLocationPermissionOverride: () => permission.future,
+        resolveLocationOverride: () => location.future,
+      );
+      addTearDown(platform.close);
+      final fetchedWeather = testWeatherSnapshot(
+        locationLabel: 'Fetched City',
+        sourceLabel: 'Network',
+      );
+      final fetcher = _CompletingWeatherFetcher(fetch.future);
+      final controller = HomeController(
+        cache: cache,
+        fetchWeather: fetcher.call,
+        platform: platform,
+      );
+
+      final initialization = controller.initialize();
+      final manualRefresh = controller.refreshWeather(force: true);
+      final forcedRefresh = controller.refreshWeather(force: true);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(platform.permissionRequests, 1);
+      permission.complete(true);
+      await Future<void>.delayed(Duration.zero);
+      expect(platform.locationResolves, 1);
+      location.complete(platform.location);
+      await Future<void>.delayed(Duration.zero);
+      expect(fetcher.calls, 1);
+      fetch.complete(fetchedWeather);
+
+      await Future.wait([initialization, manualRefresh, forcedRefresh]);
+
+      expect(platform.permissionRequests, 1);
+      expect(platform.locationResolves, 1);
+      expect(fetcher.calls, 1);
+      expect(cache.weatherWrites, 1);
+      expect(controller.weather, same(fetchedWeather));
+    },
+  );
+
+  test('dispose during battery read stops initialization', () async {
+    final batteryRead = Completer<BatteryStatus>();
+    final platform = FakePlatformGateway(
+      readBatteryStatusOverride: () => batteryRead.future,
+    );
+    addTearDown(platform.close);
+    final controller = HomeController(
+      fetchWeather: RecordingWeatherFetcher(testWeatherSnapshot()).call,
+      platform: platform,
+    );
+
+    final initialization = controller.initialize();
+    expect(platform.batteryReads, 1);
+
+    controller.dispose();
+    batteryRead.complete(const BatteryStatus(level: 77, isCharging: false));
+
+    await expectLater(initialization, completes);
+    expect(platform.batteryWatches, 0);
+    expect(platform.permissionRequests, 0);
+  });
+
+  test('dispose during permission request stops location work', () async {
+    final permission = Completer<bool>();
+    final platform = FakePlatformGateway(
+      requestLocationPermissionOverride: () => permission.future,
+    );
+    addTearDown(platform.close);
+    final fetcher = RecordingWeatherFetcher(testWeatherSnapshot());
+    final controller = HomeController(
+      fetchWeather: fetcher.call,
+      platform: platform,
+    );
+
+    final initialization = controller.initialize();
+    await _waitUntil(() => platform.permissionRequests == 1);
+
+    controller.dispose();
+    permission.complete(true);
+
+    await expectLater(initialization, completes);
+    expect(platform.locationResolves, 0);
+    expect(fetcher.calls, 0);
+  });
+
+  test('dispose during location resolve stops weather fetch', () async {
+    final location = Completer<DeviceLocation?>();
+    final platform = FakePlatformGateway(
+      resolveLocationOverride: () => location.future,
+    );
+    addTearDown(platform.close);
+    final fetcher = RecordingWeatherFetcher(testWeatherSnapshot());
+    final controller = HomeController(
+      fetchWeather: fetcher.call,
+      platform: platform,
+    );
+
+    final initialization = controller.initialize();
+    await _waitUntil(() => platform.locationResolves == 1);
+
+    controller.dispose();
+    location.complete(platform.location);
+
+    await expectLater(initialization, completes);
+    expect(fetcher.calls, 0);
+  });
+
+  test('dispose during weather fetch drops the late result', () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final cache = _RecordingCacheService(preferences);
+    final fetch = Completer<WeatherSnapshot>();
+    final fetcher = _CompletingWeatherFetcher(fetch.future);
+    final platform = FakePlatformGateway();
+    addTearDown(platform.close);
+    final controller = HomeController(
+      cache: cache,
+      fetchWeather: fetcher.call,
+      platform: platform,
+    );
+
+    final initialization = controller.initialize();
+    await _waitUntil(() => fetcher.calls == 1);
+
+    controller.dispose();
+    fetch.complete(testWeatherSnapshot(locationLabel: 'Late City'));
+
+    await expectLater(initialization, completes);
+    expect(controller.weather, isNull);
+    expect(cache.weatherWrites, 0);
+  });
+
+  test(
+    'battery polling refreshes level without events and stops on dispose',
+    () async {
+      final pollRead = Completer<BatteryStatus>();
+      var isInitialRead = true;
+      final platform = FakePlatformGateway(
+        readBatteryStatusOverride: () {
+          if (isInitialRead) {
+            isInitialRead = false;
+            return Future<BatteryStatus>.value(
+              const BatteryStatus(level: 10, isCharging: false),
+            );
+          }
+          return pollRead.future;
+        },
+      );
+      addTearDown(platform.close);
+      final controller = HomeController(
+        platform: platform,
+        batteryPollingInterval: const Duration(milliseconds: 5),
+      );
+
+      await controller.initialize();
+      expect(controller.battery.level, 10);
+      expect(platform.batteryWatches, 1);
+
+      await _waitUntil(() => platform.batteryReads == 2);
+      await Future<void>.delayed(const Duration(milliseconds: 15));
+      expect(platform.batteryReads, 2);
+
+      pollRead.complete(const BatteryStatus(level: 66, isCharging: false));
+      await _waitUntil(() => controller.battery.level == 66);
+      expect(controller.battery.level, 66);
+
+      controller.dispose();
+      final readsAfterDispose = platform.batteryReads;
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(platform.batteryReads, readsAfterDispose);
+    },
+  );
+
+  test('dispose during battery poll drops its late result', () async {
+    final pollRead = Completer<BatteryStatus>();
+    var isInitialRead = true;
+    final platform = FakePlatformGateway(
+      readBatteryStatusOverride: () {
+        if (isInitialRead) {
+          isInitialRead = false;
+          return Future<BatteryStatus>.value(
+            const BatteryStatus(level: 10, isCharging: false),
+          );
+        }
+        return pollRead.future;
+      },
+    );
+    addTearDown(platform.close);
+    final controller = HomeController(
+      platform: platform,
+      batteryPollingInterval: const Duration(milliseconds: 5),
+    );
+
+    await controller.initialize();
+    var notifications = 0;
+    controller.addListener(() => notifications += 1);
+    await _waitUntil(() => platform.batteryReads == 2);
+
+    controller.dispose();
+    pollRead.complete(const BatteryStatus(level: 99, isCharging: true));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.battery.level, 10);
+    expect(notifications, 0);
+  });
+
   test('openBilibili delegates to platform service', () async {
     final platform = FakePlatformGateway();
     addTearDown(platform.close);
@@ -162,4 +380,35 @@ void main() {
 
     expect(platform.openBilibiliCalls, 1);
   });
+}
+
+Future<void> _waitUntil(bool Function() condition) async {
+  for (var attempt = 0; attempt < 100 && !condition(); attempt += 1) {
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+  }
+  expect(condition(), isTrue);
+}
+
+class _CompletingWeatherFetcher {
+  _CompletingWeatherFetcher(this.result);
+
+  final Future<WeatherSnapshot> result;
+  int calls = 0;
+
+  Future<WeatherSnapshot> call(WeatherRequest request) {
+    calls += 1;
+    return result;
+  }
+}
+
+class _RecordingCacheService extends CacheService {
+  _RecordingCacheService(super.preferences);
+
+  int weatherWrites = 0;
+
+  @override
+  Future<void> saveWeather(WeatherSnapshot snapshot) {
+    weatherWrites += 1;
+    return super.saveWeather(snapshot);
+  }
 }

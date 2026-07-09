@@ -22,13 +22,15 @@ class HomeController extends ChangeNotifier {
     PlatformGateway? platform,
     TimerController? timerController,
     DateTime Function() now = DateTime.now,
+    Duration batteryPollingInterval = const Duration(minutes: 5),
   }) : _weather = initialWeather,
        _battery = initialBattery,
        _cache = cache,
        _fetchWeather = fetchWeather,
        _platform = platform,
        _timerController = timerController,
-       _now = now;
+       _now = now,
+       _batteryPollingInterval = batteryPollingInterval;
 
   factory HomeController.preview() {
     return HomeController(
@@ -78,15 +80,23 @@ class HomeController extends ChangeNotifier {
   final PlatformGateway? _platform;
   final TimerController? _timerController;
   final DateTime Function() _now;
+  final Duration _batteryPollingInterval;
   StreamSubscription<BatteryStatus>? _batterySubscription;
+  Timer? _batteryPollingTimer;
   WeatherRequest? _weatherRequest;
+  Future<WeatherRequest?>? _weatherRequestFuture;
   bool _isRefreshingWeather = false;
+  bool _isBatteryPolling = false;
+  bool _isDisposed = false;
 
   WeatherSnapshot? get weather => _weather;
   BatteryStatus get battery => _battery;
   bool get isSimpleMode => _isSimpleMode;
 
   Future<void> initialize() async {
+    if (_isDisposed) {
+      return;
+    }
     final cache = _cache;
     if (cache != null) {
       final cachedWeather = cache.loadWeather();
@@ -98,6 +108,9 @@ class HomeController extends ChangeNotifier {
     }
 
     await _startBatteryUpdates();
+    if (_isDisposed) {
+      return;
+    }
     await _ensureWeatherRequest();
 
     if (_shouldRefresh(_weather)) {
@@ -106,22 +119,24 @@ class HomeController extends ChangeNotifier {
   }
 
   Future<void> refreshWeather({bool force = false}) async {
-    if (_isRefreshingWeather) {
+    if (_isDisposed || _isRefreshingWeather) {
       return;
     }
     if (!force && !_shouldRefresh(_weather)) {
       return;
     }
 
-    final request = await _ensureWeatherRequest();
-    final fetchWeather = _fetchWeather;
-    if (request == null || fetchWeather == null) {
-      return;
-    }
-
     _isRefreshingWeather = true;
     try {
+      final request = await _ensureWeatherRequest();
+      final fetchWeather = _fetchWeather;
+      if (_isDisposed || request == null || fetchWeather == null) {
+        return;
+      }
       final snapshot = await fetchWeather(request);
+      if (_isDisposed) {
+        return;
+      }
       _weather = snapshot;
       notifyListeners();
       await _cache?.saveWeather(snapshot);
@@ -147,6 +162,9 @@ class HomeController extends ChangeNotifier {
   }
 
   void setBattery(BatteryStatus status) {
+    if (_isDisposed) {
+      return;
+    }
     _battery = status;
     notifyListeners();
   }
@@ -156,12 +174,43 @@ class HomeController extends ChangeNotifier {
     if (platform == null) {
       return;
     }
-    setBattery(await platform.readBatteryStatus());
+    final status = await platform.readBatteryStatus();
+    if (_isDisposed) {
+      return;
+    }
+    setBattery(status);
     await _batterySubscription?.cancel();
+    if (_isDisposed) {
+      return;
+    }
     _batterySubscription = platform.watchBatteryStatus().listen(
       setBattery,
       onError: (_) => setBattery(const BatteryStatus.unavailable()),
     );
+    _batteryPollingTimer = Timer.periodic(
+      _batteryPollingInterval,
+      (_) => unawaited(_pollBatteryStatus()),
+    );
+  }
+
+  Future<void> _pollBatteryStatus() async {
+    final platform = _platform;
+    if (_isDisposed || _isBatteryPolling || platform == null) {
+      return;
+    }
+    _isBatteryPolling = true;
+    try {
+      final status = await platform.readBatteryStatus();
+      if (!_isDisposed) {
+        setBattery(status);
+      }
+    } catch (_) {
+      if (!_isDisposed) {
+        setBattery(const BatteryStatus.unavailable());
+      }
+    } finally {
+      _isBatteryPolling = false;
+    }
   }
 
   Future<WeatherRequest?> _ensureWeatherRequest() async {
@@ -169,12 +218,32 @@ class HomeController extends ChangeNotifier {
     if (existing != null) {
       return existing;
     }
+    final pending = _weatherRequestFuture;
+    if (pending != null) {
+      return pending;
+    }
+    final requestFuture = _resolveWeatherRequest();
+    _weatherRequestFuture = requestFuture;
+    try {
+      return await requestFuture;
+    } finally {
+      if (identical(_weatherRequestFuture, requestFuture)) {
+        _weatherRequestFuture = null;
+      }
+    }
+  }
+
+  Future<WeatherRequest?> _resolveWeatherRequest() async {
     final platform = _platform;
-    if (platform == null || !await platform.requestLocationPermission()) {
+    if (platform == null) {
+      return null;
+    }
+    final permissionGranted = await platform.requestLocationPermission();
+    if (_isDisposed || !permissionGranted) {
       return null;
     }
     final location = await platform.resolveLocation();
-    if (location == null) {
+    if (_isDisposed || location == null) {
       return null;
     }
     _weatherRequest = WeatherRequest(
@@ -194,6 +263,8 @@ class HomeController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _isDisposed = true;
+    _batteryPollingTimer?.cancel();
     unawaited(_batterySubscription?.cancel());
     super.dispose();
   }
