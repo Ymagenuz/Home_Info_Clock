@@ -1,7 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 class QuickActionsPanel extends StatelessWidget {
-  const QuickActionsPanel({super.key});
+  const QuickActionsPanel({
+    super.key,
+    this.onOpenBilibili,
+    this.onRefreshWeather,
+  });
+
+  final Future<void> Function()? onOpenBilibili;
+  final Future<void> Function()? onRefreshWeather;
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +48,9 @@ class QuickActionsPanel extends StatelessWidget {
                 Expanded(
                   child: IconButton.filledTonal(
                     tooltip: 'Open video',
-                    onPressed: () {},
+                    onPressed: onOpenBilibili == null
+                        ? null
+                        : () => unawaited(onOpenBilibili!()),
                     icon: const Icon(Icons.play_arrow),
                   ),
                 ),
@@ -47,7 +58,9 @@ class QuickActionsPanel extends StatelessWidget {
                 Expanded(
                   child: IconButton.filledTonal(
                     tooltip: 'Refresh',
-                    onPressed: () {},
+                    onPressed: onRefreshWeather == null
+                        ? null
+                        : () => unawaited(onRefreshWeather!()),
                     icon: const Icon(Icons.refresh),
                   ),
                 ),

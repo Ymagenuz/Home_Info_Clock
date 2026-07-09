@@ -11,6 +11,11 @@ class TimerController extends ChangeNotifier {
 
   TimerState get state => _state;
 
+  void restore(TimerState state) {
+    _state = state;
+    notifyListeners();
+  }
+
   void setUnit(TimerUnit unit, int value) {
     final clamped = switch (unit) {
       TimerUnit.hours => value.clamp(0, 11).toInt(),

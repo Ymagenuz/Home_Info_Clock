@@ -103,9 +103,13 @@ class _FullDashboard extends StatelessWidget {
                     padding: const EdgeInsets.all(18),
                     child: TomorrowPanel(weather: homeController.weather),
                   ),
-                  const Padding(
-                    padding: EdgeInsets.all(18),
-                    child: QuickActionsPanel(),
+                  Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: QuickActionsPanel(
+                      onOpenBilibili: homeController.openBilibili,
+                      onRefreshWeather: () =>
+                          homeController.refreshWeather(force: true),
+                    ),
                   ),
                   const Center(child: Text('\u9884\u7559\u9875')),
                 ],

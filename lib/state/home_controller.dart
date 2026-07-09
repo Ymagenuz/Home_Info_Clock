@@ -1,14 +1,34 @@
+// ignore_for_file: prefer_initializing_formals
+
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/battery_status.dart';
 import '../models/weather.dart';
+import '../services/cache_service.dart';
+import '../services/platform_service.dart';
+import 'timer_controller.dart';
+
+typedef WeatherFetcher =
+    Future<WeatherSnapshot> Function(WeatherRequest request);
 
 class HomeController extends ChangeNotifier {
   HomeController({
     WeatherSnapshot? initialWeather,
     BatteryStatus initialBattery = const BatteryStatus.unavailable(),
+    CacheService? cache,
+    WeatherFetcher? fetchWeather,
+    PlatformGateway? platform,
+    TimerController? timerController,
+    DateTime Function() now = DateTime.now,
   }) : _weather = initialWeather,
-       _battery = initialBattery;
+       _battery = initialBattery,
+       _cache = cache,
+       _fetchWeather = fetchWeather,
+       _platform = platform,
+       _timerController = timerController,
+       _now = now;
 
   factory HomeController.preview() {
     return HomeController(
@@ -53,10 +73,68 @@ class HomeController extends ChangeNotifier {
   WeatherSnapshot? _weather;
   BatteryStatus _battery;
   bool _isSimpleMode = false;
+  final CacheService? _cache;
+  final WeatherFetcher? _fetchWeather;
+  final PlatformGateway? _platform;
+  final TimerController? _timerController;
+  final DateTime Function() _now;
+  StreamSubscription<BatteryStatus>? _batterySubscription;
+  WeatherRequest? _weatherRequest;
+  bool _isRefreshingWeather = false;
 
   WeatherSnapshot? get weather => _weather;
   BatteryStatus get battery => _battery;
   bool get isSimpleMode => _isSimpleMode;
+
+  Future<void> initialize() async {
+    final cache = _cache;
+    if (cache != null) {
+      final cachedWeather = cache.loadWeather();
+      if (cachedWeather != null) {
+        _weather = cachedWeather;
+        notifyListeners();
+      }
+      _timerController?.restore(cache.loadTimer());
+    }
+
+    await _startBatteryUpdates();
+    await _ensureWeatherRequest();
+
+    if (_shouldRefresh(_weather)) {
+      await refreshWeather(force: true);
+    }
+  }
+
+  Future<void> refreshWeather({bool force = false}) async {
+    if (_isRefreshingWeather) {
+      return;
+    }
+    if (!force && !_shouldRefresh(_weather)) {
+      return;
+    }
+
+    final request = await _ensureWeatherRequest();
+    final fetchWeather = _fetchWeather;
+    if (request == null || fetchWeather == null) {
+      return;
+    }
+
+    _isRefreshingWeather = true;
+    try {
+      final snapshot = await fetchWeather(request);
+      _weather = snapshot;
+      notifyListeners();
+      await _cache?.saveWeather(snapshot);
+    } catch (_) {
+      // Keep rendering the cached snapshot when a live refresh fails.
+    } finally {
+      _isRefreshingWeather = false;
+    }
+  }
+
+  Future<void> openBilibili() async {
+    await _platform?.openBilibili();
+  }
 
   void toggleSimpleMode() {
     _isSimpleMode = !_isSimpleMode;
@@ -71,5 +149,52 @@ class HomeController extends ChangeNotifier {
   void setBattery(BatteryStatus status) {
     _battery = status;
     notifyListeners();
+  }
+
+  Future<void> _startBatteryUpdates() async {
+    final platform = _platform;
+    if (platform == null) {
+      return;
+    }
+    setBattery(await platform.readBatteryStatus());
+    await _batterySubscription?.cancel();
+    _batterySubscription = platform.watchBatteryStatus().listen(
+      setBattery,
+      onError: (_) => setBattery(const BatteryStatus.unavailable()),
+    );
+  }
+
+  Future<WeatherRequest?> _ensureWeatherRequest() async {
+    final existing = _weatherRequest;
+    if (existing != null) {
+      return existing;
+    }
+    final platform = _platform;
+    if (platform == null || !await platform.requestLocationPermission()) {
+      return null;
+    }
+    final location = await platform.resolveLocation();
+    if (location == null) {
+      return null;
+    }
+    _weatherRequest = WeatherRequest(
+      latitude: location.latitude,
+      longitude: location.longitude,
+      locationLabel: location.label,
+    );
+    return _weatherRequest;
+  }
+
+  bool _shouldRefresh(WeatherSnapshot? snapshot) {
+    if (snapshot == null) {
+      return true;
+    }
+    return _now().difference(snapshot.updatedAt) > const Duration(minutes: 30);
+  }
+
+  @override
+  void dispose() {
+    unawaited(_batterySubscription?.cancel());
+    super.dispose();
   }
 }
