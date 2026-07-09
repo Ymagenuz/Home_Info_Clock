@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:home_info_clock/models/weather.dart';
+import 'package:home_info_clock/services/http_json_client.dart';
 import 'package:home_info_clock/services/weather_service.dart';
 import 'package:home_info_clock/services/weather_source.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 class FakeWeatherSource implements WeatherSource {
   FakeWeatherSource(this.name, this.result);
@@ -17,6 +22,18 @@ class FakeWeatherSource implements WeatherSource {
       throw result as Exception;
     }
     return result as WeatherSnapshot;
+  }
+}
+
+class HttpWeatherSource implements WeatherSource {
+  HttpWeatherSource(this.client);
+
+  final JsonHttpClient client;
+
+  @override
+  Future<WeatherSnapshot> fetch(WeatherRequest request) async {
+    await client.getJson(Uri.parse('https://example.test/weather'));
+    throw StateError('unreachable');
   }
 }
 
@@ -99,6 +116,45 @@ void main() {
   });
 
   test(
+    'WeatherService fills local tips without replacing source advice',
+    () async {
+      final days = const [
+        WeatherDay(
+          date: '2026-07-07',
+          code: 2,
+          description: '\u591a\u4e91',
+          high: 18,
+          low: 11,
+        ),
+        WeatherDay(
+          date: '2026-07-08',
+          code: 61,
+          description: '\u96e8',
+          high: 12,
+          low: 6,
+          precipitation: 80,
+          windKmh: 35,
+          clothingTip: 'Source clothing',
+        ),
+      ];
+      final primary = FakeWeatherSource(
+        'primary',
+        snapshot('Source', days: days),
+      );
+      final service = WeatherService(
+        primary: primary,
+        fallback: FakeWeatherSource('fallback', snapshot('Fallback')),
+      );
+
+      final result = await service.fetchWeather(request);
+
+      expect(result.tomorrow?.clothingTip, 'Source clothing');
+      expect(result.tomorrow?.umbrellaTip, isNotEmpty);
+      expect(result.tomorrow?.travelTip, isNotEmpty);
+    },
+  );
+
+  test(
     'WeatherService merges primary realtime with fallback forecast',
     () async {
       final realtimeAt = DateTime(2026, 7, 7, 9, 20);
@@ -147,7 +203,8 @@ void main() {
       expect(result.sourceLabel, '\u5b9e\u65f6+\u9884\u62a5');
       expect(result.reportTimeLabel, '09:20');
       expect(result.forecastAvailable, isTrue);
-      expect(result.days, same(days));
+      expect(result.days.map((day) => day.date), days.map((day) => day.date));
+      expect(result.days[1].description, days[1].description);
       expect(openMeteo.called, isTrue);
     },
   );
@@ -182,9 +239,27 @@ void main() {
       expect(result.sourceLabel, '\u5b9e\u65f6+\u9884\u62a5');
       expect(result.currentTemp, 28);
       expect(result.currentDescription, '\u5c0f\u96e8');
-      expect(result.days, same(days));
+      expect(result.days.map((day) => day.date), days.map((day) => day.date));
+      expect(result.days[1].description, days[1].description);
       expect(openMeteo.called, isTrue);
       expect(qweather.called, isTrue);
     },
   );
+
+  test('WeatherService falls back after a primary HTTP timeout', () async {
+    final pending = Completer<http.Response>();
+    final primary = HttpWeatherSource(
+      JsonHttpClient(
+        client: MockClient((_) => pending.future),
+        timeout: const Duration(milliseconds: 5),
+      ),
+    );
+    final fallback = FakeWeatherSource('fallback', snapshot('Open-Meteo'));
+    final service = WeatherService(primary: primary, fallback: fallback);
+
+    final result = await service.fetchWeather(request);
+
+    expect(result.sourceLabel, 'Open-Meteo');
+    expect(fallback.called, isTrue);
+  });
 }

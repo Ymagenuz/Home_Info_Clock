@@ -55,6 +55,36 @@ void main() {
     expect(controller.battery.isCharging, isFalse);
   });
 
+  test(
+    'HomeController exposes loading then permission-missing status',
+    () async {
+      final platform = FakePlatformGateway(permissionGranted: false);
+      addTearDown(platform.close);
+      final controller = HomeController(platform: platform);
+
+      expect(controller.weatherStatus, WeatherStatus.loading);
+
+      await controller.initialize();
+
+      expect(controller.weatherStatus, WeatherStatus.permissionMissing);
+      expect(controller.weather, isNull);
+    },
+  );
+
+  test(
+    'HomeController exposes unavailable when location cannot resolve',
+    () async {
+      final platform = FakePlatformGateway(location: null);
+      addTearDown(platform.close);
+      final controller = HomeController(platform: platform);
+
+      await controller.initialize();
+
+      expect(controller.weatherStatus, WeatherStatus.unavailable);
+      expect(controller.weather, isNull);
+    },
+  );
+
   test('initialize restores cached weather and timer state', () async {
     SharedPreferences.setMockInitialValues({});
     final preferences = await SharedPreferences.getInstance();
@@ -128,6 +158,36 @@ void main() {
     expect(controller.weather, same(fetchedWeather));
     expect(cache.loadWeather()?.locationLabel, 'Fetched City');
   });
+
+  test(
+    'failed refresh retains stale cached weather and marks it stale',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final preferences = await SharedPreferences.getInstance();
+      final cache = CacheService(preferences);
+      final now = DateTime(2026, 7, 8, 9, 0);
+      final cachedWeather = testWeatherSnapshot(
+        locationLabel: 'Cached City',
+        updatedAt: now.subtract(const Duration(minutes: 31)),
+      );
+      await cache.saveWeather(cachedWeather);
+      final platform = FakePlatformGateway();
+      addTearDown(platform.close);
+      final controller = HomeController(
+        cache: cache,
+        fetchWeather: (_) async => throw StateError('offline'),
+        platform: platform,
+        now: () => now,
+      );
+
+      await controller.initialize();
+
+      expect(controller.weather?.locationLabel, cachedWeather.locationLabel);
+      expect(controller.weather?.updatedAt, cachedWeather.updatedAt);
+      expect(controller.weatherStatus, WeatherStatus.stale);
+      expect(controller.isRefreshingWeather, isFalse);
+    },
+  );
 
   test('refreshWeather persists fetched weather', () async {
     SharedPreferences.setMockInitialValues({});

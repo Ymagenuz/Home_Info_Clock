@@ -200,6 +200,78 @@ void main() {
     expect(result.days.single.code, 0);
   });
 
+  test(
+    'QWeatherWeatherSource keeps forecast when indices request fails',
+    () async {
+      final requests = <Uri>[];
+      final client = FakeJsonHttpClient(
+        onGet: (uri, headers) async {
+          requests.add(uri);
+          if (uri.path.endsWith('/weather/now')) {
+            return <String, dynamic>{
+              'code': '200',
+              'now': {
+                'temp': '11',
+                'feelsLike': '9',
+                'humidity': '86',
+                'windSpeed': '35',
+                'icon': '305',
+                'text': '\u5c0f\u96e8',
+              },
+            };
+          }
+          if (uri.path.endsWith('/weather/7d')) {
+            return <String, dynamic>{
+              'code': '200',
+              'daily': [
+                {
+                  'fxDate': '2026-07-07',
+                  'iconDay': '305',
+                  'textDay': '\u5c0f\u96e8',
+                  'tempMax': '13',
+                  'tempMin': '7',
+                  'precip': '4',
+                  'uvIndex': '2',
+                  'windSpeedDay': '35',
+                },
+                {
+                  'fxDate': '2026-07-08',
+                  'iconDay': '305',
+                  'textDay': '\u5c0f\u96e8',
+                  'tempMax': '12',
+                  'tempMin': '6',
+                  'precip': '8',
+                  'uvIndex': '2',
+                  'windSpeedDay': '32',
+                },
+              ],
+            };
+          }
+          throw StateError('indices unavailable');
+        },
+      );
+      final source = QWeatherWeatherSource(
+        client: client,
+        config: const AppConfig(qweatherApiKey: 'api-key'),
+      );
+
+      final result = await source.fetch(
+        const WeatherRequest(
+          latitude: 31.23,
+          longitude: 121.47,
+          locationLabel: '\u4e0a\u6d77',
+        ),
+      );
+
+      expect(requests, hasLength(3));
+      expect(result.forecastAvailable, isTrue);
+      expect(result.days, hasLength(2));
+      expect(result.tomorrow?.clothingTip, isNotEmpty);
+      expect(result.tomorrow?.umbrellaTip, isNotEmpty);
+      expect(result.tomorrow?.travelTip, isNotEmpty);
+    },
+  );
+
   test('QWeatherWeatherSource signs JWT config with Ed25519 key', () async {
     final requestHeaders = <Map<String, String>>[];
     final client = FakeJsonHttpClient(

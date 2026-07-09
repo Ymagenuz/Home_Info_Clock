@@ -133,4 +133,28 @@ void main() {
       expect(identical(result, snapshot), isTrue);
     },
   );
+
+  test('applyAdvice keeps existing tips when AI request fails', () async {
+    final original = buildSnapshot();
+    final days = [...original.days];
+    days[1] = days[1].copyWith(
+      clothingTip: 'Local clothing',
+      umbrellaTip: 'Local umbrella',
+      travelTip: 'Local travel',
+    );
+    final snapshot = original.copyWith(days: days);
+    final service = AiAdviceService(
+      client: FakeJsonHttpClient(
+        onPost: (_, _, _) async => throw StateError('AI offline'),
+      ),
+      config: const AppConfig(gptsApiKey: 'secret'),
+    );
+
+    final result = await service.applyAdvice(snapshot);
+
+    expect(result.tomorrow?.clothingTip, 'Local clothing');
+    expect(result.tomorrow?.umbrellaTip, 'Local umbrella');
+    expect(result.tomorrow?.travelTip, 'Local travel');
+    expect(result.sourceLabel, isNot(contains('AI\u5efa\u8bae')));
+  });
 }

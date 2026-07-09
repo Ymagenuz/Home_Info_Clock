@@ -6,9 +6,12 @@ import 'package:home_info_clock/widgets/timer_panel.dart';
 void main() {
   testWidgets('TimerPanel changes minute value and starts', (tester) async {
     final controller = TimerController();
+    final now = DateTime(2026, 7, 9, 9);
 
     await tester.pumpWidget(
-      MaterialApp(home: TimerPanel(controller: controller)),
+      MaterialApp(
+        home: TimerPanel(controller: controller, now: now),
+      ),
     );
 
     await tester.tap(find.byKey(const ValueKey('timer-minute-plus')));

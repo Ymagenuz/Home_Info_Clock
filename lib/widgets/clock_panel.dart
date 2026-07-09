@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 import '../painters/analog_clock_painter.dart';
 
 class ClockPanel extends StatelessWidget {
-  const ClockPanel({super.key, required this.onToggleMode});
+  const ClockPanel({super.key, required this.now, required this.onToggleMode});
 
+  final DateTime now;
   final VoidCallback onToggleMode;
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
     final timeLabel = '${_twoDigits(now.hour)}:${_twoDigits(now.minute)}';
     final dateLabel =
         '${now.year}-${_twoDigits(now.month)}-${_twoDigits(now.day)}';

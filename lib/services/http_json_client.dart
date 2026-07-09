@@ -3,9 +3,13 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class JsonHttpClient {
-  const JsonHttpClient({this.client});
+  const JsonHttpClient({
+    this.client,
+    this.timeout = const Duration(seconds: 15),
+  });
 
   final http.Client? client;
+  final Duration timeout;
 
   Future<Map<String, dynamic>> getJson(
     Uri uri, {
@@ -13,10 +17,9 @@ class JsonHttpClient {
   }) async {
     final activeClient = client ?? http.Client();
     try {
-      final response = await activeClient.get(
-        uri,
-        headers: {'Accept': 'application/json', ...headers},
-      );
+      final response = await activeClient
+          .get(uri, headers: {'Accept': 'application/json', ...headers})
+          .timeout(timeout);
       _throwForStatus('GET', uri, response.statusCode);
       return _decodeObject(response.body);
     } finally {
@@ -33,15 +36,17 @@ class JsonHttpClient {
   }) async {
     final activeClient = client ?? http.Client();
     try {
-      final response = await activeClient.post(
-        uri,
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json; charset=utf-8',
-          ...headers,
-        },
-        body: jsonEncode(body),
-      );
+      final response = await activeClient
+          .post(
+            uri,
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json; charset=utf-8',
+              ...headers,
+            },
+            body: jsonEncode(body),
+          )
+          .timeout(timeout);
       _throwForStatus('POST', uri, response.statusCode);
       return _decodeObject(response.body);
     } finally {

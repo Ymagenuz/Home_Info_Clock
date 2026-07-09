@@ -1,4 +1,5 @@
 import '../models/weather.dart';
+import 'local_weather_advice.dart';
 import 'weather_source.dart';
 
 class WeatherService {
@@ -13,6 +14,10 @@ class WeatherService {
   final WeatherSource? secondaryFallback;
 
   Future<WeatherSnapshot> fetchWeather(WeatherRequest request) async {
+    return ensureLocalWeatherAdvice(await _fetchWeather(request));
+  }
+
+  Future<WeatherSnapshot> _fetchWeather(WeatherRequest request) async {
     WeatherSnapshot? realtime;
     try {
       final snapshot = await primary.fetch(request);

@@ -4,16 +4,16 @@ import '../painters/timer_painter.dart';
 import '../state/timer_controller.dart';
 
 class TimerPanel extends StatelessWidget {
-  const TimerPanel({super.key, required this.controller});
+  const TimerPanel({super.key, required this.controller, required this.now});
 
   final TimerController controller;
+  final DateTime now;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
-        final now = DateTime.now();
         final state = controller.state;
         final units = state.unitsAt(now);
         final statusLabel = state.isFinished
@@ -125,7 +125,7 @@ class TimerPanel extends StatelessWidget {
                 height: 52,
                 child: FilledButton.icon(
                   key: const ValueKey('timer-start'),
-                  onPressed: () => controller.startOrClear(DateTime.now()),
+                  onPressed: () => controller.startOrClear(now),
                   icon: Icon(state.isRunning ? Icons.clear : Icons.play_arrow),
                   label: Text(state.isRunning ? 'Clear' : 'Start'),
                 ),

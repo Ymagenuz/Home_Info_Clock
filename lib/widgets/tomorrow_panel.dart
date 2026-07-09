@@ -5,24 +5,22 @@ import '../painters/weather_icon_painter.dart';
 import 'metric_cell.dart';
 
 class TomorrowPanel extends StatelessWidget {
-  const TomorrowPanel({super.key, required this.weather});
+  const TomorrowPanel({super.key, required this.weather, this.compact = false});
 
   final WeatherSnapshot? weather;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final tomorrow = weather?.tomorrow;
-    final description =
-        tomorrow?.description ?? '\u7b49\u5f85\u5929\u6c14\u6570\u636e';
-
     return DecoratedBox(
       decoration: BoxDecoration(
         color: const Color(0x12FFFFFF),
         border: Border.all(color: const Color(0x22FFFFFF)),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
+      child: SingleChildScrollView(
+        padding: EdgeInsets.all(compact ? 12 : 18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -33,8 +31,6 @@ class TomorrowPanel extends StatelessWidget {
                 Expanded(
                   child: Text(
                     'Tomorrow',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                       color: Colors.white,
@@ -43,49 +39,9 @@ class TomorrowPanel extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 18),
-            Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: 64,
-                      child: AspectRatio(
-                        aspectRatio: 1,
-                        child: CustomPaint(
-                          painter: WeatherIconPainter(
-                            tomorrow?.code ?? 61,
-                            const Color(0xFF7DD3FC),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      description,
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                          ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      tomorrow == null
-                          ? '--'
-                          : '${tomorrow.low}\u00B0 / ${tomorrow.high}\u00B0',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: const Color(0xCCFFFFFF),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            SizedBox(height: compact ? 10 : 18),
+            _TomorrowSummary(tomorrow: tomorrow, compact: compact),
+            SizedBox(height: compact ? 10 : 16),
             Row(
               children: [
                 Expanded(
@@ -109,8 +65,121 @@ class TomorrowPanel extends StatelessWidget {
                 ),
               ],
             ),
+            SizedBox(height: compact ? 10 : 16),
+            _AdviceRow(
+              icon: Icons.checkroom_outlined,
+              label: 'Clothing',
+              value: tomorrow?.clothingTip,
+            ),
+            _AdviceRow(
+              icon: Icons.umbrella_outlined,
+              label: 'Umbrella',
+              value: tomorrow?.umbrellaTip,
+            ),
+            _AdviceRow(
+              icon: Icons.directions_transit_outlined,
+              label: 'Travel',
+              value: tomorrow?.travelTip,
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _TomorrowSummary extends StatelessWidget {
+  const _TomorrowSummary({required this.tomorrow, required this.compact});
+
+  final WeatherDay? tomorrow;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final day = tomorrow;
+    final description =
+        day?.description ?? '\u7b49\u5f85\u5929\u6c14\u6570\u636e';
+    return Row(
+      children: [
+        SizedBox(
+          width: compact ? 44 : 64,
+          height: compact ? 44 : 64,
+          child: CustomPaint(
+            painter: WeatherIconPainter(
+              day?.code ?? 61,
+              const Color(0xFF7DD3FC),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                description,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                day == null ? '--' : '${day.low}\u00B0 / ${day.high}\u00B0',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: const Color(0xCCFFFFFF),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AdviceRow extends StatelessWidget {
+  const _AdviceRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String? value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: const Color(0xFF93E5AB)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: const Color(0xAAFFFFFF),
+                  ),
+                ),
+                Text(
+                  value ?? 'Advice unavailable',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: Colors.white),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

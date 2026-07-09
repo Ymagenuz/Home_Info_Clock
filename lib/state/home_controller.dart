@@ -13,6 +13,8 @@ import 'timer_controller.dart';
 typedef WeatherFetcher =
     Future<WeatherSnapshot> Function(WeatherRequest request);
 
+enum WeatherStatus { loading, permissionMissing, unavailable, stale, ready }
+
 class HomeController extends ChangeNotifier {
   HomeController({
     WeatherSnapshot? initialWeather,
@@ -30,7 +32,13 @@ class HomeController extends ChangeNotifier {
        _platform = platform,
        _timerController = timerController,
        _now = now,
-       _batteryPollingInterval = batteryPollingInterval;
+       _batteryPollingInterval = batteryPollingInterval,
+       _weatherStatus = initialWeather == null
+           ? WeatherStatus.loading
+           : now().difference(initialWeather.updatedAt) >
+                 const Duration(minutes: 30)
+           ? WeatherStatus.stale
+           : WeatherStatus.ready;
 
   factory HomeController.preview() {
     return HomeController(
@@ -81,6 +89,7 @@ class HomeController extends ChangeNotifier {
   final TimerController? _timerController;
   final DateTime Function() _now;
   final Duration _batteryPollingInterval;
+  WeatherStatus _weatherStatus;
   StreamSubscription<BatteryStatus>? _batterySubscription;
   Timer? _batteryPollingTimer;
   WeatherRequest? _weatherRequest;
@@ -92,6 +101,8 @@ class HomeController extends ChangeNotifier {
   WeatherSnapshot? get weather => _weather;
   BatteryStatus get battery => _battery;
   bool get isSimpleMode => _isSimpleMode;
+  WeatherStatus get weatherStatus => _weatherStatus;
+  bool get isRefreshingWeather => _isRefreshingWeather;
 
   Future<void> initialize() async {
     if (_isDisposed) {
@@ -102,6 +113,7 @@ class HomeController extends ChangeNotifier {
       final cachedWeather = cache.loadWeather();
       if (cachedWeather != null) {
         _weather = cachedWeather;
+        _weatherStatus = _statusFor(cachedWeather);
         notifyListeners();
       }
       _timerController?.restore(cache.loadTimer());
@@ -111,9 +123,9 @@ class HomeController extends ChangeNotifier {
     if (_isDisposed) {
       return;
     }
-    await _ensureWeatherRequest();
+    final request = await _ensureWeatherRequest();
 
-    if (_shouldRefresh(_weather)) {
+    if (request != null && _shouldRefresh(_weather)) {
       await refreshWeather(force: true);
     }
   }
@@ -127,10 +139,19 @@ class HomeController extends ChangeNotifier {
     }
 
     _isRefreshingWeather = true;
+    if (_weather == null) {
+      _weatherStatus = WeatherStatus.loading;
+    }
+    notifyListeners();
     try {
       final request = await _ensureWeatherRequest();
       final fetchWeather = _fetchWeather;
       if (_isDisposed || request == null || fetchWeather == null) {
+        if (!_isDisposed &&
+            _weather == null &&
+            _weatherStatus == WeatherStatus.loading) {
+          _weatherStatus = WeatherStatus.unavailable;
+        }
         return;
       }
       final snapshot = await fetchWeather(request);
@@ -138,12 +159,22 @@ class HomeController extends ChangeNotifier {
         return;
       }
       _weather = snapshot;
+      _weatherStatus = WeatherStatus.ready;
       notifyListeners();
       await _cache?.saveWeather(snapshot);
     } catch (_) {
       // Keep rendering the cached snapshot when a live refresh fails.
+      if (!_isDisposed) {
+        _weatherStatus = _weather == null
+            ? WeatherStatus.unavailable
+            : WeatherStatus.stale;
+        notifyListeners();
+      }
     } finally {
       _isRefreshingWeather = false;
+      if (!_isDisposed) {
+        notifyListeners();
+      }
     }
   }
 
@@ -158,6 +189,7 @@ class HomeController extends ChangeNotifier {
 
   void setWeather(WeatherSnapshot snapshot) {
     _weather = snapshot;
+    _weatherStatus = _statusFor(snapshot);
     notifyListeners();
   }
 
@@ -240,10 +272,22 @@ class HomeController extends ChangeNotifier {
     }
     final permissionGranted = await platform.requestLocationPermission();
     if (_isDisposed || !permissionGranted) {
+      if (!_isDisposed) {
+        _weatherStatus = _weather == null
+            ? WeatherStatus.permissionMissing
+            : _statusFor(_weather!);
+        notifyListeners();
+      }
       return null;
     }
     final location = await platform.resolveLocation();
     if (_isDisposed || location == null) {
+      if (!_isDisposed) {
+        _weatherStatus = _weather == null
+            ? WeatherStatus.unavailable
+            : _statusFor(_weather!);
+        notifyListeners();
+      }
       return null;
     }
     _weatherRequest = WeatherRequest(
@@ -259,6 +303,10 @@ class HomeController extends ChangeNotifier {
       return true;
     }
     return _now().difference(snapshot.updatedAt) > const Duration(minutes: 30);
+  }
+
+  WeatherStatus _statusFor(WeatherSnapshot snapshot) {
+    return _shouldRefresh(snapshot) ? WeatherStatus.stale : WeatherStatus.ready;
   }
 
   @override

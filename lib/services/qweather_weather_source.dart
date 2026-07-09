@@ -5,6 +5,7 @@ import 'package:cryptography/cryptography.dart';
 import '../models/app_config.dart';
 import '../models/weather.dart';
 import 'http_json_client.dart';
+import 'local_weather_advice.dart';
 import 'weather_service_support.dart';
 import 'weather_source.dart';
 
@@ -67,38 +68,45 @@ class QWeatherWeatherSource implements WeatherSource {
       }),
       headers,
     );
-    final indicesRoot = await _readQWeatherJson(
-      Uri.https(host, '$basePath/indices/3d', {
-        'location': locationParam,
-        'type': '1,3,6,16',
-        'lang': 'zh',
-      }),
-      headers,
-    );
+    Map<String, dynamic> indicesRoot = const {};
+    try {
+      indicesRoot = await _readQWeatherJson(
+        Uri.https(host, '$basePath/indices/3d', {
+          'location': locationParam,
+          'type': '1,3,6,16',
+          'lang': 'zh',
+        }),
+        headers,
+      );
+    } catch (_) {
+      // Lifestyle indices enrich the forecast but must not make it unusable.
+    }
 
     final current = asMap(nowRoot['now'], 'now');
     final currentCode = _normalizeQWeatherIcon(
       stringValue(current['icon'], '999'),
     );
 
-    return WeatherSnapshot(
-      locationLabel: request.locationLabel,
-      updatedAt: fetchedAt,
-      currentTemp: intValue(current['temp']),
-      apparentTemp: intValue(current['feelsLike'], intValue(current['temp'])),
-      humidity: intValue(current['humidity']),
-      windKmh: intValue(current['windSpeed']),
-      currentCode: currentCode,
-      currentDescription: stringValue(
-        current['text'],
-        weatherDescription(currentCode),
-      ),
-      sourceLabel: '\u548c\u98ce\u9884\u62a5',
-      reportTimeLabel: formatHm(fetchedAt),
-      forecastAvailable: true,
-      days: _parseDailyForecast(
-        asMap(dailyRoot, 'dailyRoot'),
-        _parseIndices(asMap(indicesRoot, 'indicesRoot')),
+    return ensureLocalWeatherAdvice(
+      WeatherSnapshot(
+        locationLabel: request.locationLabel,
+        updatedAt: fetchedAt,
+        currentTemp: intValue(current['temp']),
+        apparentTemp: intValue(current['feelsLike'], intValue(current['temp'])),
+        humidity: intValue(current['humidity']),
+        windKmh: intValue(current['windSpeed']),
+        currentCode: currentCode,
+        currentDescription: stringValue(
+          current['text'],
+          weatherDescription(currentCode),
+        ),
+        sourceLabel: '\u548c\u98ce\u9884\u62a5',
+        reportTimeLabel: formatHm(fetchedAt),
+        forecastAvailable: true,
+        days: _parseDailyForecast(
+          asMap(dailyRoot, 'dailyRoot'),
+          _parseIndices(indicesRoot),
+        ),
       ),
     );
   }

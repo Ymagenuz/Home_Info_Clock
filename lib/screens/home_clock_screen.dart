@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../state/home_controller.dart';
@@ -9,36 +11,73 @@ import '../widgets/timer_panel.dart';
 import '../widgets/tomorrow_panel.dart';
 import '../widgets/weather_panel.dart';
 
-class HomeClockScreen extends StatelessWidget {
+class HomeClockScreen extends StatefulWidget {
   const HomeClockScreen({
     super.key,
     required this.homeController,
     required this.timerController,
+    this.now = DateTime.now,
+    this.tickInterval = const Duration(seconds: 1),
   });
 
   final HomeController homeController;
   final TimerController timerController;
+  final DateTime Function() now;
+  final Duration tickInterval;
+
+  @override
+  State<HomeClockScreen> createState() => _HomeClockScreenState();
+}
+
+class _HomeClockScreenState extends State<HomeClockScreen> {
+  late DateTime _now;
+  late final Timer _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _now = widget.now();
+    widget.timerController.sync(_now);
+    _ticker = Timer.periodic(widget.tickInterval, (_) {
+      final next = widget.now();
+      widget.timerController.sync(next);
+      if (mounted) {
+        setState(() => _now = next);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([homeController, timerController]),
+      animation: Listenable.merge([
+        widget.homeController,
+        widget.timerController,
+      ]),
       builder: (context, _) {
         return Scaffold(
           backgroundColor: const Color(0xFF061016),
           body: SafeArea(
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 320),
-              child: homeController.isSimpleMode
+              child: widget.homeController.isSimpleMode
                   ? SimpleModeView(
                       key: const ValueKey('simple'),
-                      weather: homeController.weather,
-                      onToggleMode: homeController.toggleSimpleMode,
+                      weather: widget.homeController.weather,
+                      now: _now,
+                      onToggleMode: widget.homeController.toggleSimpleMode,
                     )
                   : _FullDashboard(
                       key: const ValueKey('full'),
-                      homeController: homeController,
-                      timerController: timerController,
+                      homeController: widget.homeController,
+                      timerController: widget.timerController,
+                      now: _now,
                     ),
             ),
           ),
@@ -53,10 +92,12 @@ class _FullDashboard extends StatelessWidget {
     super.key,
     required this.homeController,
     required this.timerController,
+    required this.now,
   });
 
   final HomeController homeController;
   final TimerController timerController;
+  final DateTime now;
 
   @override
   Widget build(BuildContext context) {
@@ -81,6 +122,9 @@ class _FullDashboard extends StatelessWidget {
               child: WeatherPanel(
                 weather: homeController.weather,
                 battery: homeController.battery,
+                status: homeController.weatherStatus,
+                isRefreshing: homeController.isRefreshingWeather,
+                onRefresh: () => homeController.refreshWeather(force: true),
               ),
             ),
             const _Separator(),
@@ -88,8 +132,11 @@ class _FullDashboard extends StatelessWidget {
               child: PageView(
                 key: const ValueKey('home-center-page-view'),
                 children: [
-                  ClockPanel(onToggleMode: homeController.toggleSimpleMode),
-                  TimerPanel(controller: timerController),
+                  ClockPanel(
+                    now: now,
+                    onToggleMode: homeController.toggleSimpleMode,
+                  ),
+                  TimerPanel(controller: timerController, now: now),
                 ],
               ),
             ),
