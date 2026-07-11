@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/manual_location.dart';
 import '../models/timer_state.dart';
 import '../models/weather.dart';
 
@@ -11,6 +12,7 @@ class CacheService {
 
   static const _weatherKey = 'weather_json';
   static const _timerKey = 'timer_json';
+  static const _locationKey = 'manual_location_json';
 
   final SharedPreferences preferences;
 
@@ -36,6 +38,36 @@ class CacheService {
       return null;
     } on ArgumentError {
       _clearKey(_weatherKey);
+      return null;
+    }
+  }
+
+  Future<void> clearWeather() {
+    return preferences.remove(_weatherKey);
+  }
+
+  Future<void> saveLocation(ManualLocation location) {
+    return preferences.setString(_locationKey, jsonEncode(location.toJson()));
+  }
+
+  ManualLocation? loadLocation() {
+    final raw = preferences.getString(_locationKey);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) {
+        _clearKey(_locationKey);
+        return null;
+      }
+      return ManualLocation.fromJson(decoded);
+    } on FormatException {
+      _clearKey(_locationKey);
+      return null;
+    } on TypeError {
+      _clearKey(_locationKey);
+      return null;
+    } on ArgumentError {
+      _clearKey(_locationKey);
       return null;
     }
   }

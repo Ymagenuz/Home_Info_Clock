@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:home_info_clock/models/manual_location.dart';
 import 'package:home_info_clock/models/timer_state.dart';
 import 'package:home_info_clock/models/weather.dart';
 import 'package:home_info_clock/services/cache_service.dart';
@@ -49,6 +50,22 @@ void main() {
 
     expect(restored?.locationLabel, '\u4e0a\u6d77');
     expect(restored?.today?.high, 33);
+  });
+
+  test('CacheService round trips the last confirmed location', () async {
+    final cache = CacheService(await SharedPreferences.getInstance());
+    const location = ManualLocation(
+      label: '日本 东京',
+      latitude: 35.6762,
+      longitude: 139.6503,
+    );
+
+    await cache.saveLocation(location);
+
+    final restored = cache.loadLocation();
+    expect(restored?.label, location.label);
+    expect(restored?.latitude, location.latitude);
+    expect(restored?.longitude, location.longitude);
   });
 
   test('CacheService returns null and clears corrupt weather cache', () async {

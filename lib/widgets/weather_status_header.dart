@@ -10,17 +10,20 @@ class WeatherStatusHeader extends StatelessWidget {
     required this.status,
     required this.isRefreshing,
     this.title,
+    this.locationLabel,
+    this.onLocationTap,
   });
 
   final WeatherSnapshot? weather;
   final WeatherStatus status;
   final bool isRefreshing;
   final String? title;
+  final String? locationLabel;
+  final VoidCallback? onLocationTap;
 
   @override
   Widget build(BuildContext context) {
-    final location =
-        title ?? weather?.locationLabel ?? '\u7b49\u5f85\u5b9a\u4f4d';
+    final location = title ?? locationLabel ?? weather?.locationLabel ?? '选择地点';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -32,15 +35,38 @@ class WeatherStatusHeader extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                location,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
+              child: title == null
+                  ? Semantics(
+                      button: true,
+                      label: '选择天气地点：$location',
+                      child: InkWell(
+                        key: const ValueKey('weather-location-entry'),
+                        borderRadius: BorderRadius.circular(6),
+                        onTap: onLocationTap,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 3),
+                          child: Text(
+                            location,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                          ),
+                        ),
+                      ),
+                    )
+                  : Text(
+                      location,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
             ),
           ],
         ),
@@ -64,7 +90,7 @@ class WeatherStatusHeader extends StatelessWidget {
     final updatedAt = weather?.updatedAt;
     return switch (status) {
       WeatherStatus.loading => 'Loading weather',
-      WeatherStatus.permissionMissing => 'Location permission needed',
+      WeatherStatus.locationNeeded => '请选择地点',
       WeatherStatus.unavailable => 'Weather unavailable',
       WeatherStatus.stale =>
         updatedAt == null

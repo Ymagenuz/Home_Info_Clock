@@ -55,29 +55,15 @@ class RecordingWeatherFetcher {
 
 class FakePlatformGateway implements PlatformGateway {
   FakePlatformGateway({
-    this.location = const DeviceLocation(
-      latitude: 31.2304,
-      longitude: 121.4737,
-      label: 'Live City',
-    ),
-    this.permissionGranted = true,
     this.initialBattery = const BatteryStatus(level: 55, isCharging: false),
     this.readBatteryStatusOverride,
-    this.requestLocationPermissionOverride,
-    this.resolveLocationOverride,
   });
 
-  final DeviceLocation? location;
-  final bool permissionGranted;
   final BatteryStatus initialBattery;
   final Future<BatteryStatus> Function()? readBatteryStatusOverride;
-  final Future<bool> Function()? requestLocationPermissionOverride;
-  final Future<DeviceLocation?> Function()? resolveLocationOverride;
   final StreamController<BatteryStatus> batteryUpdates =
       StreamController<BatteryStatus>.broadcast();
 
-  int permissionRequests = 0;
-  int locationResolves = 0;
   int openBilibiliCalls = 0;
   int batteryReads = 0;
   int batteryWatches = 0;
@@ -96,18 +82,6 @@ class FakePlatformGateway implements PlatformGateway {
     batteryReads += 1;
     return readBatteryStatusOverride?.call() ??
         Future<BatteryStatus>.value(initialBattery);
-  }
-
-  @override
-  Future<bool> requestLocationPermission() async {
-    permissionRequests += 1;
-    return await requestLocationPermissionOverride?.call() ?? permissionGranted;
-  }
-
-  @override
-  Future<DeviceLocation?> resolveLocation() async {
-    locationResolves += 1;
-    return await resolveLocationOverride?.call() ?? location;
   }
 
   @override

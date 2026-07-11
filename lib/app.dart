@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'models/app_config.dart';
 import 'screens/home_clock_screen.dart';
 import 'services/ai_advice_service.dart';
+import 'services/ai_location_service.dart';
 import 'services/cache_service.dart';
+import 'services/china_location_service.dart';
 import 'services/http_json_client.dart';
 import 'services/open_meteo_weather_source.dart';
 import 'services/platform_service.dart';
@@ -43,17 +45,26 @@ class HomeInfoClockApp extends StatefulWidget {
 class _HomeInfoClockAppState extends State<HomeInfoClockApp> {
   late final HomeController _homeController;
   late final TimerController _timerController;
+  late final AiLocationService? _aiLocationService;
+  late final ChinaLocationService? _chinaLocationService;
 
   @override
   void initState() {
     super.initState();
     _timerController = TimerController();
     if (widget.preview) {
+      _aiLocationService = null;
+      _chinaLocationService = null;
       _homeController = HomeController.preview();
       return;
     }
 
     final cache = widget.cache!;
+    _aiLocationService = AiLocationService(
+      client: widget.httpClient!,
+      config: widget.config!,
+    );
+    _chinaLocationService = ChinaLocationService(client: widget.httpClient!);
     _timerController.addListener(_persistTimerState);
     _homeController = HomeController(
       cache: cache,
@@ -85,6 +96,8 @@ class _HomeInfoClockAppState extends State<HomeInfoClockApp> {
       home: HomeClockScreen(
         homeController: _homeController,
         timerController: _timerController,
+        resolveChinaLocation: _chinaLocationService?.resolve,
+        resolveLocation: _aiLocationService?.resolve,
       ),
     );
   }

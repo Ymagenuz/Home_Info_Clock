@@ -3,16 +3,57 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:home_info_clock/models/china_region.dart';
+import 'package:home_info_clock/models/manual_location.dart';
 import 'package:home_info_clock/models/timer_state.dart';
 import 'package:home_info_clock/models/weather.dart';
 import 'package:home_info_clock/screens/home_clock_screen.dart';
-import 'package:home_info_clock/services/platform_service.dart';
+import 'package:home_info_clock/services/cache_service.dart';
 import 'package:home_info_clock/state/home_controller.dart';
 import 'package:home_info_clock/state/timer_controller.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../support/live_test_fakes.dart';
 
 void main() {
+  testWidgets('weather location text is the only entry and opens one dialog', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(900, 520));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final controller = HomeController();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeClockScreen(
+          homeController: controller,
+          timerController: TimerController(),
+          loadChinaRegions: _loadChinaRegions,
+          resolveLocation: (_) async => const ManualLocation(
+            label: '新加坡',
+            latitude: 1.3521,
+            longitude: 103.8198,
+          ),
+        ),
+      ),
+    );
+
+    final entry = find.byKey(const ValueKey('weather-location-entry'));
+    expect(entry, findsOneWidget);
+    expect(find.text('选择地点'), findsOneWidget);
+    expect(find.byKey(const ValueKey('manual-location-dialog')), findsNothing);
+
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('manual-location-dialog')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('china-province-wheel')), findsOneWidget);
+    expect(find.byKey(const ValueKey('global-location-input')), findsOneWidget);
+  });
+
   testWidgets('HomeClockScreen separates right-side pages and real text', (
     tester,
   ) async {
@@ -244,10 +285,14 @@ void main() {
       final simpleMode = find.semantics.byPredicate(
         (node) => node.getSemanticsData().tooltip == 'Simple mode',
       );
+      final locationEntry = find.semantics.byPredicate(
+        (node) =>
+            node.label.startsWith('\u9009\u62e9\u5929\u6c14\u5730\u70b9\uff1a'),
+      );
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.pump();
       expect(
-        simpleMode
+        locationEntry
             .evaluate()
             .single
             .getSemanticsData()
@@ -289,7 +334,7 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.pump();
       expect(
-        simpleMode
+        locationEntry
             .evaluate()
             .single
             .getSemanticsData()
@@ -367,21 +412,25 @@ void main() {
         updatedAt: now.subtract(const Duration(hours: 1)),
       );
       final refreshed = _weather(location: 'Fresh City', updatedAt: now);
-      final platform = FakePlatformGateway(
-        location: const DeviceLocation(
+      SharedPreferences.setMockInitialValues({});
+      final cache = CacheService(await SharedPreferences.getInstance());
+      await cache.saveLocation(
+        const ManualLocation(
+          label: 'Live City',
           latitude: 31.2,
           longitude: 121.5,
-          label: 'Live City',
         ),
       );
-      addTearDown(platform.close);
       final fetcher = RecordingWeatherFetcher(refreshed);
       final controller = HomeController(
-        initialWeather: stale,
+        initialWeather: _weather(location: 'Cached City', updatedAt: now),
+        cache: cache,
         fetchWeather: fetcher.call,
-        platform: platform,
         now: () => now,
       );
+      addTearDown(controller.dispose);
+      await controller.initialize();
+      controller.setWeather(stale);
 
       await tester.pumpWidget(
         MaterialApp(
@@ -420,10 +469,28 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(fetcher.calls, 1);
-      expect(find.text('Fresh City'), findsOneWidget);
+      expect(controller.weather, same(refreshed));
+      expect(find.text('Live City'), findsOneWidget);
+      expect(find.text('Fresh City'), findsNothing);
       expect(find.text('Updated 09:00'), findsOneWidget);
     },
   );
+}
+
+Future<List<ChinaRegion>> _loadChinaRegions() async {
+  return const <ChinaRegion>[
+    ChinaRegion(
+      name: '广东省',
+      code: '440000',
+      children: <ChinaRegion>[
+        ChinaRegion(
+          name: '深圳市',
+          code: '440300',
+          children: <ChinaRegion>[ChinaRegion(name: '南山区', code: '440305')],
+        ),
+      ],
+    ),
+  ];
 }
 
 Future<void> _showTimerPage(WidgetTester tester) async {

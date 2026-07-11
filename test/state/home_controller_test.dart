@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:home_info_clock/models/battery_status.dart';
+import 'package:home_info_clock/models/manual_location.dart';
 import 'package:home_info_clock/models/timer_state.dart';
 import 'package:home_info_clock/models/weather.dart';
 import 'package:home_info_clock/services/cache_service.dart';
-import 'package:home_info_clock/services/platform_service.dart';
 import 'package:home_info_clock/state/home_controller.dart';
 import 'package:home_info_clock/state/timer_controller.dart';
 
@@ -55,35 +55,153 @@ void main() {
     expect(controller.battery.isCharging, isFalse);
   });
 
-  test(
-    'HomeController exposes loading then permission-missing status',
-    () async {
-      final platform = FakePlatformGateway(permissionGranted: false);
-      addTearDown(platform.close);
-      final controller = HomeController(platform: platform);
+  test('initialize never requests automatic device location', () async {
+    final platform = FakePlatformGateway();
+    addTearDown(platform.close);
+    final controller = HomeController(platform: platform);
 
-      expect(controller.weatherStatus, WeatherStatus.loading);
+    await controller.initialize();
+
+    expect(controller.weather, isNull);
+    expect(controller.weatherStatus.name, 'locationNeeded');
+  });
+
+  test(
+    'initialize discards legacy weather without a confirmed location',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final preferences = await SharedPreferences.getInstance();
+      final cache = CacheService(preferences);
+      await cache.saveWeather(testWeatherSnapshot(locationLabel: 'Auto City'));
+      final controller = HomeController(cache: cache);
 
       await controller.initialize();
 
-      expect(controller.weatherStatus, WeatherStatus.permissionMissing);
       expect(controller.weather, isNull);
+      expect(controller.locationLabel, '选择地点');
+      expect(controller.weatherStatus, WeatherStatus.locationNeeded);
+      expect(cache.loadWeather(), isNull);
     },
   );
 
   test(
-    'HomeController exposes unavailable when location cannot resolve',
+    'initialize refreshes stale weather with the saved manual location',
     () async {
-      final platform = FakePlatformGateway(location: null);
+      SharedPreferences.setMockInitialValues({});
+      final preferences = await SharedPreferences.getInstance();
+      final cache = CacheService(preferences);
+      const location = ManualLocation(
+        label: '日本 东京',
+        latitude: 35.6762,
+        longitude: 139.6503,
+      );
+      final now = DateTime(2026, 7, 11, 10);
+      await cache.saveLocation(location);
+      await cache.saveWeather(
+        testWeatherSnapshot(
+          locationLabel: location.label,
+          updatedAt: now.subtract(const Duration(hours: 1)),
+        ),
+      );
+      final platform = FakePlatformGateway();
       addTearDown(platform.close);
-      final controller = HomeController(platform: platform);
+      final fetcher = RecordingWeatherFetcher(
+        testWeatherSnapshot(locationLabel: location.label, updatedAt: now),
+      );
+      final controller = HomeController(
+        cache: cache,
+        fetchWeather: fetcher.call,
+        platform: platform,
+        now: () => now,
+      );
 
       await controller.initialize();
 
+      expect(fetcher.calls, 1);
+      expect(fetcher.lastRequest?.locationLabel, location.label);
+      expect(fetcher.lastRequest?.latitude, location.latitude);
+      expect(fetcher.lastRequest?.longitude, location.longitude);
+    },
+  );
+
+  test('selectLocation persists and fetches the confirmed location', () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final cache = CacheService(preferences);
+    const location = ManualLocation(
+      label: '新加坡',
+      latitude: 1.3521,
+      longitude: 103.8198,
+    );
+    final fetcher = RecordingWeatherFetcher(
+      testWeatherSnapshot(locationLabel: location.label),
+    );
+    final controller = HomeController(cache: cache, fetchWeather: fetcher.call);
+
+    await controller.selectLocation(location);
+
+    expect(controller.locationLabel, location.label);
+    expect(cache.loadLocation()?.label, location.label);
+    expect(fetcher.calls, 1);
+    expect(fetcher.lastRequest?.latitude, location.latitude);
+    expect(fetcher.lastRequest?.longitude, location.longitude);
+    expect(controller.weather?.locationLabel, location.label);
+  });
+
+  test(
+    'selectLocation removes mismatched weather even when refresh fails',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final preferences = await SharedPreferences.getInstance();
+      final cache = CacheService(preferences);
+      final oldWeather = testWeatherSnapshot(locationLabel: 'Old City');
+      await cache.saveWeather(oldWeather);
+      const location = ManualLocation(
+        label: 'New City',
+        latitude: 1.3521,
+        longitude: 103.8198,
+      );
+      final controller = HomeController(
+        initialWeather: oldWeather,
+        cache: cache,
+        fetchWeather: (_) async => throw StateError('offline'),
+      );
+
+      await controller.selectLocation(location);
+
+      expect(controller.weather, isNull);
       expect(controller.weatherStatus, WeatherStatus.unavailable);
+      expect(cache.loadWeather(), isNull);
+      expect(cache.loadLocation()?.label, location.label);
+    },
+  );
+
+  test(
+    'HomeController exposes location-needed without a saved location',
+    () async {
+      final platform = FakePlatformGateway();
+      addTearDown(platform.close);
+      final controller = HomeController(platform: platform);
+
+      expect(controller.weatherStatus, WeatherStatus.locationNeeded);
+
+      await controller.initialize();
+
+      expect(controller.weatherStatus, WeatherStatus.locationNeeded);
       expect(controller.weather, isNull);
     },
   );
+
+  test('refresh without a saved location does not fetch weather', () async {
+    final platform = FakePlatformGateway();
+    addTearDown(platform.close);
+    final controller = HomeController(platform: platform);
+
+    await controller.refreshWeather(force: true);
+
+    expect(controller.weatherStatus, WeatherStatus.locationNeeded);
+    expect(controller.weather, isNull);
+  });
 
   test('initialize restores cached weather and timer state', () async {
     SharedPreferences.setMockInitialValues({});
@@ -94,6 +212,13 @@ void main() {
       locationLabel: 'Cached City',
       updatedAt: now.subtract(const Duration(minutes: 10)),
       sourceLabel: 'Cache',
+    );
+    await cache.saveLocation(
+      const ManualLocation(
+        label: 'Cached City',
+        latitude: 31.2304,
+        longitude: 121.4737,
+      ),
     );
     await cache.saveWeather(cachedWeather);
     await cache.saveTimer(const TimerState(minutes: 12, seconds: 5));
@@ -118,8 +243,6 @@ void main() {
     expect(controller.battery.level, 55);
     expect(timerController.state.minutes, 12);
     expect(timerController.state.seconds, 5);
-    expect(platform.permissionRequests, 1);
-    expect(platform.locationResolves, 1);
     expect(fetcher.calls, 0);
   });
 
@@ -132,6 +255,13 @@ void main() {
       testWeatherSnapshot(
         locationLabel: 'Old City',
         updatedAt: now.subtract(const Duration(minutes: 31)),
+      ),
+    );
+    await cache.saveLocation(
+      const ManualLocation(
+        label: 'Live City',
+        latitude: 31.2304,
+        longitude: 121.4737,
       ),
     );
 
@@ -171,6 +301,13 @@ void main() {
         updatedAt: now.subtract(const Duration(minutes: 31)),
       );
       await cache.saveWeather(cachedWeather);
+      await cache.saveLocation(
+        const ManualLocation(
+          label: 'Cached City',
+          latitude: 31.2304,
+          longitude: 121.4737,
+        ),
+      );
       final platform = FakePlatformGateway();
       addTearDown(platform.close);
       final controller = HomeController(
@@ -199,8 +336,18 @@ void main() {
       locationLabel: 'Fetched City',
       sourceLabel: 'Network',
     );
+    const location = ManualLocation(
+      label: 'Saved City',
+      latitude: 31.2304,
+      longitude: 121.4737,
+    );
+    await cache.saveLocation(location);
     final fetcher = RecordingWeatherFetcher(fetchedWeather);
     final controller = HomeController(
+      initialWeather: testWeatherSnapshot(
+        locationLabel: location.label,
+        updatedAt: DateTime(2026, 7, 8, 9, 0),
+      ),
       cache: cache,
       fetchWeather: fetcher.call,
       platform: platform,
@@ -208,6 +355,7 @@ void main() {
       now: () => DateTime(2026, 7, 8, 9, 0),
     );
 
+    await controller.initialize();
     await controller.refreshWeather(force: true);
 
     expect(fetcher.calls, 1);
@@ -217,19 +365,17 @@ void main() {
   });
 
   test(
-    'concurrent initial manual and forced refresh share one live request',
+    'concurrent selection and forced refreshes share one live request',
     () async {
       SharedPreferences.setMockInitialValues({});
       final preferences = await SharedPreferences.getInstance();
       final cache = _RecordingCacheService(preferences);
-      final permission = Completer<bool>();
-      final location = Completer<DeviceLocation?>();
       final fetch = Completer<WeatherSnapshot>();
-      final platform = FakePlatformGateway(
-        requestLocationPermissionOverride: () => permission.future,
-        resolveLocationOverride: () => location.future,
+      const location = ManualLocation(
+        label: 'Selected City',
+        latitude: 31.2304,
+        longitude: 121.4737,
       );
-      addTearDown(platform.close);
       final fetchedWeather = testWeatherSnapshot(
         locationLabel: 'Fetched City',
         sourceLabel: 'Network',
@@ -238,30 +384,64 @@ void main() {
       final controller = HomeController(
         cache: cache,
         fetchWeather: fetcher.call,
-        platform: platform,
       );
 
-      final initialization = controller.initialize();
+      final selection = controller.selectLocation(location);
+      await _waitUntil(() => fetcher.calls == 1);
       final manualRefresh = controller.refreshWeather(force: true);
       final forcedRefresh = controller.refreshWeather(force: true);
       await Future<void>.delayed(Duration.zero);
 
-      expect(platform.permissionRequests, 1);
-      permission.complete(true);
-      await Future<void>.delayed(Duration.zero);
-      expect(platform.locationResolves, 1);
-      location.complete(platform.location);
-      await Future<void>.delayed(Duration.zero);
       expect(fetcher.calls, 1);
       fetch.complete(fetchedWeather);
 
-      await Future.wait([initialization, manualRefresh, forcedRefresh]);
+      await Future.wait([selection, manualRefresh, forcedRefresh]);
 
-      expect(platform.permissionRequests, 1);
-      expect(platform.locationResolves, 1);
       expect(fetcher.calls, 1);
       expect(cache.weatherWrites, 1);
       expect(controller.weather, same(fetchedWeather));
+    },
+  );
+
+  test(
+    'a newer location selection supersedes an in-flight weather refresh',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final preferences = await SharedPreferences.getInstance();
+      final cache = CacheService(preferences);
+      final fetcher = _QueuedWeatherFetcher();
+      final controller = HomeController(
+        cache: cache,
+        fetchWeather: fetcher.call,
+      );
+      const oldLocation = ManualLocation(
+        label: 'Old City',
+        latitude: 31.2,
+        longitude: 121.5,
+      );
+      const newLocation = ManualLocation(
+        label: 'New City',
+        latitude: 1.35,
+        longitude: 103.82,
+      );
+
+      final firstSelection = controller.selectLocation(oldLocation);
+      await _waitUntil(() => fetcher.calls == 1);
+      final secondSelection = controller.selectLocation(newLocation);
+
+      fetcher.completers[0].complete(
+        testWeatherSnapshot(locationLabel: oldLocation.label),
+      );
+      await _waitUntil(() => fetcher.calls == 2);
+      expect(fetcher.requests[1].locationLabel, newLocation.label);
+      fetcher.completers[1].complete(
+        testWeatherSnapshot(locationLabel: newLocation.label),
+      );
+
+      await Future.wait([firstSelection, secondSelection]);
+      expect(controller.locationLabel, newLocation.label);
+      expect(controller.weather?.locationLabel, newLocation.label);
+      expect(cache.loadWeather()?.locationLabel, newLocation.label);
     },
   );
 
@@ -284,52 +464,6 @@ void main() {
 
     await expectLater(initialization, completes);
     expect(platform.batteryWatches, 0);
-    expect(platform.permissionRequests, 0);
-  });
-
-  test('dispose during permission request stops location work', () async {
-    final permission = Completer<bool>();
-    final platform = FakePlatformGateway(
-      requestLocationPermissionOverride: () => permission.future,
-    );
-    addTearDown(platform.close);
-    final fetcher = RecordingWeatherFetcher(testWeatherSnapshot());
-    final controller = HomeController(
-      fetchWeather: fetcher.call,
-      platform: platform,
-    );
-
-    final initialization = controller.initialize();
-    await _waitUntil(() => platform.permissionRequests == 1);
-
-    controller.dispose();
-    permission.complete(true);
-
-    await expectLater(initialization, completes);
-    expect(platform.locationResolves, 0);
-    expect(fetcher.calls, 0);
-  });
-
-  test('dispose during location resolve stops weather fetch', () async {
-    final location = Completer<DeviceLocation?>();
-    final platform = FakePlatformGateway(
-      resolveLocationOverride: () => location.future,
-    );
-    addTearDown(platform.close);
-    final fetcher = RecordingWeatherFetcher(testWeatherSnapshot());
-    final controller = HomeController(
-      fetchWeather: fetcher.call,
-      platform: platform,
-    );
-
-    final initialization = controller.initialize();
-    await _waitUntil(() => platform.locationResolves == 1);
-
-    controller.dispose();
-    location.complete(platform.location);
-
-    await expectLater(initialization, completes);
-    expect(fetcher.calls, 0);
   });
 
   test('dispose during weather fetch drops the late result', () async {
@@ -338,21 +472,21 @@ void main() {
     final cache = _RecordingCacheService(preferences);
     final fetch = Completer<WeatherSnapshot>();
     final fetcher = _CompletingWeatherFetcher(fetch.future);
-    final platform = FakePlatformGateway();
-    addTearDown(platform.close);
-    final controller = HomeController(
-      cache: cache,
-      fetchWeather: fetcher.call,
-      platform: platform,
-    );
+    final controller = HomeController(cache: cache, fetchWeather: fetcher.call);
 
-    final initialization = controller.initialize();
+    final selection = controller.selectLocation(
+      const ManualLocation(
+        label: 'Selected City',
+        latitude: 31.2304,
+        longitude: 121.4737,
+      ),
+    );
     await _waitUntil(() => fetcher.calls == 1);
 
     controller.dispose();
     fetch.complete(testWeatherSnapshot(locationLabel: 'Late City'));
 
-    await expectLater(initialization, completes);
+    await expectLater(selection, completes);
     expect(controller.weather, isNull);
     expect(cache.weatherWrites, 0);
   });
@@ -458,6 +592,20 @@ class _CompletingWeatherFetcher {
   Future<WeatherSnapshot> call(WeatherRequest request) {
     calls += 1;
     return result;
+  }
+}
+
+class _QueuedWeatherFetcher {
+  final requests = <WeatherRequest>[];
+  final completers = <Completer<WeatherSnapshot>>[];
+
+  int get calls => requests.length;
+
+  Future<WeatherSnapshot> call(WeatherRequest request) {
+    requests.add(request);
+    final completer = Completer<WeatherSnapshot>();
+    completers.add(completer);
+    return completer.future;
   }
 }
 

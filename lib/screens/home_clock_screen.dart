@@ -2,9 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../models/china_region.dart';
+import '../models/manual_location.dart';
+import '../services/china_region_repository.dart';
 import '../state/home_controller.dart';
 import '../state/timer_controller.dart';
 import '../widgets/clock_panel.dart';
+import '../widgets/manual_location_dialog.dart';
 import '../widgets/quick_actions_panel.dart';
 import '../widgets/simple_mode_view.dart';
 import '../widgets/timer_panel.dart';
@@ -18,15 +22,25 @@ class HomeClockScreen extends StatefulWidget {
     required this.timerController,
     this.now = DateTime.now,
     this.tickInterval = const Duration(seconds: 1),
+    this.loadChinaRegions = _loadChinaRegions,
+    this.resolveChinaLocation,
+    this.resolveLocation,
   });
 
   final HomeController homeController;
   final TimerController timerController;
   final DateTime Function() now;
   final Duration tickInterval;
+  final ChinaRegionLoader loadChinaRegions;
+  final ManualLocationResolver? resolveChinaLocation;
+  final ManualLocationResolver? resolveLocation;
 
   @override
   State<HomeClockScreen> createState() => _HomeClockScreenState();
+}
+
+Future<List<ChinaRegion>> _loadChinaRegions() {
+  return const ChinaRegionRepository().load();
 }
 
 class _HomeClockScreenState extends State<HomeClockScreen> {
@@ -85,6 +99,7 @@ class _HomeClockScreenState extends State<HomeClockScreen> {
                               homeController: widget.homeController,
                               timerController: widget.timerController,
                               now: _now,
+                              onLocationTap: _showLocationDialog,
                             ),
                     ),
                   ),
@@ -101,6 +116,30 @@ class _HomeClockScreenState extends State<HomeClockScreen> {
         );
       },
     );
+  }
+
+  Future<void> _showLocationDialog() async {
+    final chinaResolver =
+        widget.resolveChinaLocation ??
+        (_) => Future<ManualLocation>.error(
+          const FormatException('China location lookup is unavailable'),
+        );
+    final resolver =
+        widget.resolveLocation ??
+        (_) => Future<ManualLocation>.error(
+          StateError('AI location parsing is not configured'),
+        );
+    final selected = await showDialog<ManualLocation>(
+      context: context,
+      builder: (context) => ManualLocationDialog(
+        currentLabel: widget.homeController.locationLabel,
+        loadRegions: widget.loadChinaRegions,
+        resolveChinaLocation: chinaResolver,
+        resolveLocation: resolver,
+      ),
+    );
+    if (!mounted || selected == null) return;
+    await widget.homeController.selectLocation(selected);
   }
 }
 
@@ -206,11 +245,13 @@ class _FullDashboard extends StatelessWidget {
     required this.homeController,
     required this.timerController,
     required this.now,
+    required this.onLocationTap,
   });
 
   final HomeController homeController;
   final TimerController timerController;
   final DateTime now;
+  final VoidCallback onLocationTap;
 
   @override
   Widget build(BuildContext context) {
@@ -234,10 +275,12 @@ class _FullDashboard extends StatelessWidget {
               width: leftWidth,
               child: WeatherPanel(
                 weather: homeController.weather,
+                locationLabel: homeController.locationLabel,
                 battery: homeController.battery,
                 status: homeController.weatherStatus,
                 isRefreshing: homeController.isRefreshingWeather,
                 onRefresh: () => homeController.refreshWeather(force: true),
+                onLocationTap: onLocationTap,
               ),
             ),
             const _Separator(),
