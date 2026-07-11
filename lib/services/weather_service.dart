@@ -31,7 +31,9 @@ class WeatherService {
               ? snapshot
               : _mergeRealtimeWithForecast(realtime, snapshot);
         }
-        realtime ??= snapshot;
+        if (!snapshot.forecastAvailable) {
+          realtime ??= snapshot;
+        }
       } catch (error, stackTrace) {
         firstError ??= error;
         firstStackTrace ??= stackTrace;
@@ -41,7 +43,10 @@ class WeatherService {
     if (realtime != null) {
       return realtime;
     }
-    Error.throwWithStackTrace(firstError!, firstStackTrace!);
+    if (firstError != null && firstStackTrace != null) {
+      Error.throwWithStackTrace(firstError, firstStackTrace);
+    }
+    throw StateError('No weather source returned usable data');
   }
 
   bool _hasUsableForecast(WeatherSnapshot snapshot) =>

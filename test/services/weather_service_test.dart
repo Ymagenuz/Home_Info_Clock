@@ -329,21 +329,46 @@ void main() {
   });
 
   test(
-    'WeatherService does not recall a fallback with empty forecast days',
+    'WeatherService rethrows primary failure after advertised-empty fallback',
     () async {
-      final primary = FakeWeatherSource('primary', Exception('primary failed'));
+      final primaryFailure = Exception('primary failed');
+      final primary = FakeWeatherSource('primary', primaryFailure);
       final emptyFallback = FakeWeatherSource(
         'fallback',
         snapshot('Empty fallback', forecast: true, dayCount: 0),
       );
       final service = WeatherService(primary: primary, fallback: emptyFallback);
 
-      final result = await service.fetchWeather(request);
+      await expectLater(
+        service.fetchWeather(request),
+        throwsA(same(primaryFailure)),
+      );
 
-      expect(result.sourceLabel, 'Empty fallback');
-      expect(result.days, isEmpty);
       expect(primary.callCount, 1);
       expect(emptyFallback.callCount, 1);
+    },
+  );
+
+  test(
+    'WeatherService fails deterministically when every forecast is advertised-empty',
+    () async {
+      final primary = FakeWeatherSource(
+        'primary',
+        snapshot('Empty primary', forecast: true, dayCount: 0),
+      );
+      final fallback = FakeWeatherSource(
+        'fallback',
+        snapshot('Empty fallback', forecast: true, dayCount: 0),
+      );
+      final service = WeatherService(primary: primary, fallback: fallback);
+
+      await expectLater(
+        service.fetchWeather(request),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(primary.callCount, 1);
+      expect(fallback.callCount, 1);
     },
   );
 
@@ -420,7 +445,7 @@ void main() {
   );
 
   test(
-    'WeatherService keeps advertised-empty realtime and uses a later forecast',
+    'WeatherService does not merge advertised-empty current data into a later forecast',
     () async {
       final advertisedEmpty = FakeWeatherSource(
         'primary',
@@ -435,7 +460,12 @@ void main() {
       final days = forecastDays();
       final fallback = FakeWeatherSource(
         'fallback',
-        snapshot('Fallback forecast', days: days),
+        snapshot(
+          'Fallback forecast',
+          currentTemp: 31,
+          currentDescription: '\u9634',
+          days: days,
+        ),
       );
       final service = WeatherService(
         primary: advertisedEmpty,
@@ -444,9 +474,9 @@ void main() {
 
       final result = await service.fetchWeather(request);
 
-      expect(result.sourceLabel, '\u5b9e\u65f6+\u9884\u62a5');
-      expect(result.currentTemp, 28);
-      expect(result.currentDescription, '\u5c0f\u96e8');
+      expect(result.sourceLabel, 'Fallback forecast');
+      expect(result.currentTemp, 31);
+      expect(result.currentDescription, '\u9634');
       expect(result.days.map((day) => day.date), days.map((day) => day.date));
       expect(advertisedEmpty.callCount, 1);
       expect(fallback.callCount, 1);
