@@ -1,4 +1,7 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:home_info_clock/models/timer_state.dart';
 import 'package:home_info_clock/models/weather.dart';
@@ -168,6 +171,133 @@ void main() {
         findsNothing,
       );
       expect(timerController.state.isFinished, isFalse);
+    },
+  );
+
+  testWidgets(
+    'finished timer overlay scopes semantics and hides the dashboard',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      final timerController = TimerController();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HomeClockScreen(
+            homeController: HomeController.preview(),
+            timerController: timerController,
+            now: () => DateTime(2026, 7, 9, 9),
+          ),
+        ),
+      );
+
+      final simpleMode = find.semantics.byPredicate(
+        (node) => node.getSemanticsData().tooltip == 'Simple mode',
+      );
+      expect(simpleMode, findsOne);
+
+      timerController.restore(const TimerState(isFinished: true));
+      await tester.pump();
+
+      expect(simpleMode, findsNothing);
+      expect(
+        find.semantics.byPredicate((node) {
+          final flags = node.getSemanticsData().flagsCollection;
+          return node.label == 'Timer finished' &&
+              flags.scopesRoute &&
+              flags.namesRoute &&
+              flags.isLiveRegion;
+        }),
+        findsOne,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('timer-finished-dismiss')));
+      await tester.pump();
+
+      expect(
+        find.semantics.byPredicate((node) {
+          final flags = node.getSemanticsData().flagsCollection;
+          return node.label == 'Timer finished' && flags.scopesRoute;
+        }),
+        findsNothing,
+      );
+      expect(simpleMode, findsOne);
+      semantics.dispose();
+    },
+  );
+
+  testWidgets(
+    'finished timer traps keyboard focus and dismisses from the keyboard',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      final timerController = TimerController();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HomeClockScreen(
+            homeController: HomeController.preview(),
+            timerController: timerController,
+            now: () => DateTime(2026, 7, 9, 9),
+          ),
+        ),
+      );
+
+      final simpleMode = find.semantics.byPredicate(
+        (node) => node.getSemanticsData().tooltip == 'Simple mode',
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      expect(
+        simpleMode
+            .evaluate()
+            .single
+            .getSemanticsData()
+            .flagsCollection
+            .isFocused,
+        ui.Tristate.isTrue,
+      );
+
+      timerController.restore(const TimerState(isFinished: true));
+      await tester.pump();
+      await tester.pump();
+
+      final dismiss = find.semantics.byLabel('Dismiss');
+      expect(
+        dismiss.evaluate().single.getSemanticsData().flagsCollection.isFocused,
+        ui.Tristate.isTrue,
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+
+      expect(
+        dismiss.evaluate().single.getSemanticsData().flagsCollection.isFocused,
+        ui.Tristate.isTrue,
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      await tester.pump();
+
+      expect(timerController.state.isFinished, isFalse);
+      expect(
+        find.byKey(const ValueKey('timer-finished-overlay')),
+        findsNothing,
+      );
+      expect(find.semantics.byLabel('Timer finished'), findsNothing);
+      expect(simpleMode, findsOne);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      expect(
+        simpleMode
+            .evaluate()
+            .single
+            .getSemanticsData()
+            .flagsCollection
+            .isFocused,
+        ui.Tristate.isTrue,
+      );
+      semantics.dispose();
     },
   );
 

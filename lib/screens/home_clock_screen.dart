@@ -61,31 +61,35 @@ class _HomeClockScreenState extends State<HomeClockScreen> {
         widget.timerController,
       ]),
       builder: (context, _) {
+        final isTimerFinished = widget.timerController.state.isFinished;
         return Scaffold(
           backgroundColor: const Color(0xFF061016),
           body: SafeArea(
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 320),
-                    child: widget.homeController.isSimpleMode
-                        ? SimpleModeView(
-                            key: const ValueKey('simple'),
-                            weather: widget.homeController.weather,
-                            now: _now,
-                            onToggleMode:
-                                widget.homeController.toggleSimpleMode,
-                          )
-                        : _FullDashboard(
-                            key: const ValueKey('full'),
-                            homeController: widget.homeController,
-                            timerController: widget.timerController,
-                            now: _now,
-                          ),
+                  child: ExcludeFocus(
+                    excluding: isTimerFinished,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 320),
+                      child: widget.homeController.isSimpleMode
+                          ? SimpleModeView(
+                              key: const ValueKey('simple'),
+                              weather: widget.homeController.weather,
+                              now: _now,
+                              onToggleMode:
+                                  widget.homeController.toggleSimpleMode,
+                            )
+                          : _FullDashboard(
+                              key: const ValueKey('full'),
+                              homeController: widget.homeController,
+                              timerController: widget.timerController,
+                              now: _now,
+                            ),
+                    ),
                   ),
                 ),
-                if (widget.timerController.state.isFinished)
+                if (isTimerFinished)
                   Positioned.fill(
                     child: _TimerFinishedOverlay(
                       onDismiss: widget.timerController.dismissFinished,
@@ -100,65 +104,91 @@ class _HomeClockScreenState extends State<HomeClockScreen> {
   }
 }
 
-class _TimerFinishedOverlay extends StatelessWidget {
+class _TimerFinishedOverlay extends StatefulWidget {
   const _TimerFinishedOverlay({required this.onDismiss});
 
   final VoidCallback onDismiss;
 
   @override
+  State<_TimerFinishedOverlay> createState() => _TimerFinishedOverlayState();
+}
+
+class _TimerFinishedOverlayState extends State<_TimerFinishedOverlay> {
+  late final FocusNode _dismissFocusNode = FocusNode(
+    debugLabel: 'Timer finished dismiss',
+  );
+
+  @override
+  void dispose() {
+    _dismissFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Semantics(
-      container: true,
-      label: 'Timer finished',
-      child: Material(
-        key: const ValueKey('timer-finished-overlay'),
-        color: const Color(0xE6061016),
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 320),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF17252D),
-                  border: Border.all(color: const Color(0x6693E5AB)),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x66000000),
-                      blurRadius: 24,
-                      offset: Offset(0, 8),
+    return BlockSemantics(
+      child: Semantics(
+        container: true,
+        explicitChildNodes: true,
+        scopesRoute: true,
+        namesRoute: true,
+        liveRegion: true,
+        label: 'Timer finished',
+        child: FocusScope(
+          debugLabel: 'Timer finished overlay',
+          child: Material(
+            key: const ValueKey('timer-finished-overlay'),
+            color: const Color(0xE6061016),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 320),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF17252D),
+                      border: Border.all(color: const Color(0x6693E5AB)),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x66000000),
+                          blurRadius: 24,
+                          offset: Offset(0, 8),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.timer_outlined,
-                        size: 48,
-                        color: Color(0xFF93E5AB),
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.timer_outlined,
+                            size: 48,
+                            color: Color(0xFF93E5AB),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Timer finished',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.headlineSmall
+                                ?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                          ),
+                          const SizedBox(height: 18),
+                          FilledButton.icon(
+                            key: const ValueKey('timer-finished-dismiss'),
+                            focusNode: _dismissFocusNode,
+                            autofocus: true,
+                            onPressed: widget.onDismiss,
+                            icon: const Icon(Icons.check),
+                            label: const Text('Dismiss'),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Timer finished',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                            ),
-                      ),
-                      const SizedBox(height: 18),
-                      FilledButton.icon(
-                        key: const ValueKey('timer-finished-dismiss'),
-                        onPressed: onDismiss,
-                        icon: const Icon(Icons.check),
-                        label: const Text('Dismiss'),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),

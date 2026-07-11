@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import '../models/weather.dart';
 import 'local_weather_advice.dart';
 import 'weather_source.dart';
@@ -21,7 +23,12 @@ class WeatherService {
     WeatherSnapshot? realtime;
     Object? firstError;
     StackTrace? firstStackTrace;
-    final sources = [primary, fallback, ?secondaryFallback];
+    final seenSources = HashSet<WeatherSource>.identity();
+    final sources = [
+      primary,
+      fallback,
+      ?secondaryFallback,
+    ].where(seenSources.add);
 
     for (final source in sources) {
       try {

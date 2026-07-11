@@ -329,6 +329,35 @@ void main() {
   });
 
   test(
+    'WeatherService invokes one source instance only once across roles',
+    () async {
+      final sharedRealtime = FakeWeatherSource(
+        'shared',
+        snapshot(
+          'Shared realtime',
+          forecast: false,
+          dayCount: 1,
+          currentTemp: 27,
+          currentDescription: '\u5c0f\u96e8',
+        ),
+      );
+      final service = WeatherService(
+        primary: sharedRealtime,
+        fallback: sharedRealtime,
+        secondaryFallback: sharedRealtime,
+      );
+
+      final result = await service.fetchWeather(request);
+
+      expect(result.sourceLabel, 'Shared realtime');
+      expect(result.currentTemp, 27);
+      expect(result.currentDescription, '\u5c0f\u96e8');
+      expect(result.forecastAvailable, isFalse);
+      expect(sharedRealtime.callCount, 1);
+    },
+  );
+
+  test(
     'WeatherService rethrows primary failure after advertised-empty fallback',
     () async {
       final primaryFailure = Exception('primary failed');
