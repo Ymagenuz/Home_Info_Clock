@@ -1,5 +1,11 @@
 # Flutter Rebuild Implementation Plan
 
+> **Historical completed plan:** Do not re-run this plan as the current product
+> roadmap. Read
+> [`docs/CURRENT_PRODUCT_DIRECTION.md`](../../CURRENT_PRODUCT_DIRECTION.md)
+> first. Future UI and interaction optimization should use a workflow
+> proportional to each change; small fixes do not require a separate SDD cycle.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Rebuild Home Info Clock as a Flutter-first Android kiosk app in `D:\test\Home_Info_Clock`.

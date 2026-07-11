@@ -2,6 +2,13 @@
 
 Date: 2026-07-07
 
+> **Historical baseline:** This document records the original rebuild design.
+> It is no longer the current product acceptance contract. Read
+> [`docs/CURRENT_PRODUCT_DIRECTION.md`](../../CURRENT_PRODUCT_DIRECTION.md)
+> first; that document supersedes conflicting requirements, especially the
+> automatic-location workflow and the claim that feature parity alone completes
+> the rebuild.
+
 ## Goal
 
 Rebuild Home Info Clock as a Flutter application inside the existing repository at `D:\test\Home_Info_Clock`, using the Flutter SDK at `D:\test\flutter\bin\flutter.bat`.
