@@ -64,25 +64,108 @@ class _HomeClockScreenState extends State<HomeClockScreen> {
         return Scaffold(
           backgroundColor: const Color(0xFF061016),
           body: SafeArea(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 320),
-              child: widget.homeController.isSimpleMode
-                  ? SimpleModeView(
-                      key: const ValueKey('simple'),
-                      weather: widget.homeController.weather,
-                      now: _now,
-                      onToggleMode: widget.homeController.toggleSimpleMode,
-                    )
-                  : _FullDashboard(
-                      key: const ValueKey('full'),
-                      homeController: widget.homeController,
-                      timerController: widget.timerController,
-                      now: _now,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 320),
+                    child: widget.homeController.isSimpleMode
+                        ? SimpleModeView(
+                            key: const ValueKey('simple'),
+                            weather: widget.homeController.weather,
+                            now: _now,
+                            onToggleMode:
+                                widget.homeController.toggleSimpleMode,
+                          )
+                        : _FullDashboard(
+                            key: const ValueKey('full'),
+                            homeController: widget.homeController,
+                            timerController: widget.timerController,
+                            now: _now,
+                          ),
+                  ),
+                ),
+                if (widget.timerController.state.isFinished)
+                  Positioned.fill(
+                    child: _TimerFinishedOverlay(
+                      onDismiss: widget.timerController.dismissFinished,
                     ),
+                  ),
+              ],
             ),
           ),
         );
       },
+    );
+  }
+}
+
+class _TimerFinishedOverlay extends StatelessWidget {
+  const _TimerFinishedOverlay({required this.onDismiss});
+
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      container: true,
+      label: 'Timer finished',
+      child: Material(
+        key: const ValueKey('timer-finished-overlay'),
+        color: const Color(0xE6061016),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 320),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF17252D),
+                  border: Border.all(color: const Color(0x6693E5AB)),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x66000000),
+                      blurRadius: 24,
+                      offset: Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.timer_outlined,
+                        size: 48,
+                        color: Color(0xFF93E5AB),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Timer finished',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                      const SizedBox(height: 18),
+                      FilledButton.icon(
+                        key: const ValueKey('timer-finished-dismiss'),
+                        onPressed: onDismiss,
+                        icon: const Icon(Icons.check),
+                        label: const Text('Dismiss'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

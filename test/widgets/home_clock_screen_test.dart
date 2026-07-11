@@ -63,11 +63,13 @@ void main() {
     await tester.pump();
 
     expect(find.text('Home Info Clock'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('timer-finished-overlay')).hitTestable(),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
 
-    final centerPageView = find.byKey(const ValueKey('home-center-page-view'));
-    await tester.drag(centerPageView, const Offset(-300, 0));
-    await tester.pumpAndSettle();
+    await _showTimerPage(tester);
 
     expect(find.text('Timer'), findsOneWidget);
     expect(
@@ -76,6 +78,98 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'finished timer overlay is visible on the default Clock page and Simple Mode',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(700, 360));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final homeController = HomeController.preview();
+      final timerController = TimerController(
+        initial: const TimerState(isFinished: true),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HomeClockScreen(
+            homeController: homeController,
+            timerController: timerController,
+            now: () => DateTime(2026, 7, 9, 9),
+          ),
+        ),
+      );
+
+      expect(find.text('Home Info Clock'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('timer-finished-overlay')).hitTestable(),
+        findsOneWidget,
+      );
+
+      homeController.toggleSimpleMode();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('simple-clock-column')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('timer-finished-overlay')).hitTestable(),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'finished timer overlay persists across pages and modes until dismissed',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1180, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final homeController = HomeController.preview();
+      final timerController = TimerController(
+        initial: const TimerState(isFinished: true),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HomeClockScreen(
+            homeController: homeController,
+            timerController: timerController,
+            now: () => DateTime(2026, 7, 9, 9),
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const ValueKey('timer-finished-overlay')),
+        findsOneWidget,
+      );
+      expect(timerController.state.isFinished, isTrue);
+
+      await _showTimerPage(tester);
+
+      expect(find.text('Timer'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('timer-finished-overlay')),
+        findsOneWidget,
+      );
+
+      homeController.toggleSimpleMode();
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('timer-finished-overlay')),
+        findsOneWidget,
+      );
+      expect(timerController.state.isFinished, isTrue);
+
+      await tester.tap(find.byKey(const ValueKey('timer-finished-dismiss')));
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('timer-finished-overlay')),
+        findsNothing,
+      );
+      expect(timerController.state.isFinished, isFalse);
+    },
+  );
 
   testWidgets('one periodic driver updates clocks and finishes countdown', (
     tester,
@@ -200,6 +294,17 @@ void main() {
       expect(find.text('Updated 09:00'), findsOneWidget);
     },
   );
+}
+
+Future<void> _showTimerPage(WidgetTester tester) async {
+  final centerPageView = find.byKey(const ValueKey('home-center-page-view'));
+  final scrollable = find.descendant(
+    of: centerPageView,
+    matching: find.byType(Scrollable),
+  );
+  final state = tester.state<ScrollableState>(scrollable);
+  state.position.jumpTo(state.position.maxScrollExtent);
+  await tester.pumpAndSettle();
 }
 
 WeatherSnapshot _weather({

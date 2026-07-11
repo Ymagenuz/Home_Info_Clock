@@ -7,6 +7,20 @@ import 'weather_source.dart';
 class UapiWeatherSource implements WeatherSource {
   const UapiWeatherSource({required this.client, required this.config});
 
+  static final RegExp _coordinatePlaceholderLabel = RegExp(
+    r'^\s*(?:'
+    '\u4f4d\u7f6e'
+    r'|location)'
+    r'[\s:;,\.\-\uFF1A\uFF1B\uFF0C\u2013\u2014]*'
+    r'(?:[\(\[\{\uFF08]\s*)?'
+    r'[+-]?(?:\d+(?:\.\d+)?|\.\d+)'
+    r'\s*[,\uFF0C]\s*'
+    r'[+-]?(?:\d+(?:\.\d+)?|\.\d+)'
+    r'(?:\s*[\)\]\}\uFF09])?'
+    r'\s*[.!\u3002]?\s*$',
+    caseSensitive: false,
+  );
+
   final JsonHttpClient client;
   final AppConfig config;
 
@@ -59,6 +73,7 @@ class UapiWeatherSource implements WeatherSource {
     final windDirection = stringValue(root['wind_direction']);
     final reportTime = stringValue(root['report_time']);
     final forecast = root['forecast'] as List<dynamic>?;
+    final forecastAvailable = forecast?.isNotEmpty ?? false;
 
     return WeatherSnapshot(
       locationLabel:
@@ -71,9 +86,9 @@ class UapiWeatherSource implements WeatherSource {
       windKmh: windKmh,
       currentCode: code,
       currentDescription: weatherText,
-      sourceLabel: forecast == null ? 'UAPI\u5b9e\u65f6' : 'UAPI\u9884\u62a5',
+      sourceLabel: forecastAvailable ? 'UAPI\u9884\u62a5' : 'UAPI\u5b9e\u65f6',
       reportTimeLabel: reportTime,
-      forecastAvailable: forecast != null,
+      forecastAvailable: forecastAvailable,
       days: _parseForecast(
         root,
         weatherText: weatherText,
@@ -210,7 +225,7 @@ class UapiWeatherSource implements WeatherSource {
   List<String> _cityQueryCandidates(String label) {
     final candidates = <String>[];
     final cleaned = label.trim();
-    if (cleaned.isEmpty || cleaned.startsWith('\u4f4d\u7f6e ')) {
+    if (cleaned.isEmpty || _coordinatePlaceholderLabel.hasMatch(cleaned)) {
       return candidates;
     }
 

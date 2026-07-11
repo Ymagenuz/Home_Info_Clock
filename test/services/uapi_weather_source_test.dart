@@ -166,4 +166,112 @@ void main() {
       );
     },
   );
+
+  test('UapiWeatherSource treats an empty forecast as realtime-only', () async {
+    final client = FakeJsonHttpClient(
+      onGet: (uri, headers) async {
+        return <String, dynamic>{
+          'city': '\u4e0a\u6d77',
+          'weather': '\u9634',
+          'temperature': 21,
+          'humidity': '88',
+          'wind_power': '\u5fae\u98ce',
+          'wind_direction': '\u4e1c\u5317\u98ce',
+          'report_time': '09:20',
+          'forecast': <dynamic>[],
+        };
+      },
+    );
+    final source = UapiWeatherSource(client: client, config: const AppConfig());
+
+    final result = await source.fetch(
+      const WeatherRequest(
+        latitude: 31.23,
+        longitude: 121.47,
+        locationLabel: '\u4e0a\u6d77',
+      ),
+    );
+
+    expect(result.sourceLabel, 'UAPI\u5b9e\u65f6');
+    expect(result.forecastAvailable, isFalse);
+    expect(result.days, hasLength(4));
+    expect(result.days.first.description, '\u9634');
+    expect(result.days[1].description, '\u6682\u65e0\u9884\u62a5');
+  });
+
+  test(
+    'UapiWeatherSource rejects Chinese coordinate placeholders before HTTP',
+    () async {
+      for (final label in const [
+        '\u4f4d\u7f6e 31.23,121.47',
+        ' \u4f4d\u7f6e\uff1a (31.23\uff0c 121.47) ',
+      ]) {
+        var calls = 0;
+        final client = FakeJsonHttpClient(
+          onGet: (uri, headers) async {
+            calls += 1;
+            return <String, dynamic>{
+              'city': '\u4e0a\u6d77',
+              'weather': '\u9634',
+              'temperature': 21,
+            };
+          },
+        );
+        final source = UapiWeatherSource(
+          client: client,
+          config: const AppConfig(),
+        );
+
+        await expectLater(
+          source.fetch(
+            WeatherRequest(
+              latitude: 31.23,
+              longitude: 121.47,
+              locationLabel: label,
+            ),
+          ),
+          throwsA(isA<StateError>()),
+        );
+        expect(calls, 0, reason: 'placeholder was $label');
+      }
+    },
+  );
+
+  test(
+    'UapiWeatherSource rejects English coordinate placeholders before HTTP',
+    () async {
+      for (final label in const [
+        'Location 31.23,121.47',
+        ' lOcAtIoN: (31.23, 121.47). ',
+      ]) {
+        var calls = 0;
+        final client = FakeJsonHttpClient(
+          onGet: (uri, headers) async {
+            calls += 1;
+            return <String, dynamic>{
+              'city': '\u4e0a\u6d77',
+              'weather': '\u9634',
+              'temperature': 21,
+            };
+          },
+        );
+        final source = UapiWeatherSource(
+          client: client,
+          config: const AppConfig(),
+        );
+
+        await expectLater(
+          source.fetch(
+            WeatherRequest(
+              latitude: 31.23,
+              longitude: 121.47,
+              locationLabel: label,
+            ),
+          ),
+          throwsA(isA<StateError>()),
+        );
+        expect(calls, 0, reason: 'placeholder was $label');
+      }
+    },
+  );
 }

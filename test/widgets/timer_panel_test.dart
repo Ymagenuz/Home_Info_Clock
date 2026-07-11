@@ -24,7 +24,7 @@ void main() {
     expect(controller.state.isRunning, isTrue);
   });
 
-  testWidgets('TimerPanel shows finished overlay until dismissed', (
+  testWidgets('TimerPanel does not own the screen-global finished overlay', (
     tester,
   ) async {
     final controller = TimerController(
@@ -37,16 +37,8 @@ void main() {
       ),
     );
 
-    expect(
-      find.byKey(const ValueKey('timer-finished-overlay')),
-      findsOneWidget,
-    );
-    expect(find.text('Timer finished'), findsOneWidget);
-
-    await tester.tap(find.byKey(const ValueKey('timer-finished-dismiss')));
-    await tester.pump();
-
     expect(find.byKey(const ValueKey('timer-finished-overlay')), findsNothing);
-    expect(controller.state.isFinished, isFalse);
+    expect(find.text('Finished'), findsOneWidget);
+    expect(controller.state.isFinished, isTrue);
   });
 }

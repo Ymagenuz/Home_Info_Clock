@@ -19,48 +19,33 @@ class WeatherService {
 
   Future<WeatherSnapshot> _fetchWeather(WeatherRequest request) async {
     WeatherSnapshot? realtime;
-    try {
-      final snapshot = await primary.fetch(request);
-      if (snapshot.forecastAvailable && snapshot.days.length > 1) {
-        return snapshot;
-      }
-      realtime = snapshot;
-    } catch (_) {
-      // Fall through to the next source.
-    }
+    Object? firstError;
+    StackTrace? firstStackTrace;
+    final sources = [primary, fallback, ?secondaryFallback];
 
-    try {
-      final snapshot = await fallback.fetch(request);
-      if (snapshot.days.isNotEmpty) {
-        if (realtime != null) {
-          return _mergeRealtimeWithForecast(realtime, snapshot);
-        }
-        return snapshot;
-      }
-    } catch (_) {
-      // Fall through to optional source.
-    }
-
-    final last = secondaryFallback;
-    if (last != null) {
+    for (final source in sources) {
       try {
-        final snapshot = await last.fetch(request);
-        if (realtime != null && snapshot.days.isNotEmpty) {
-          return _mergeRealtimeWithForecast(realtime, snapshot);
+        final snapshot = await source.fetch(request);
+        if (_hasUsableForecast(snapshot)) {
+          return realtime == null
+              ? snapshot
+              : _mergeRealtimeWithForecast(realtime, snapshot);
         }
-        return snapshot;
-      } catch (_) {
-        if (realtime != null) {
-          return realtime;
-        }
-        rethrow;
+        realtime ??= snapshot;
+      } catch (error, stackTrace) {
+        firstError ??= error;
+        firstStackTrace ??= stackTrace;
       }
     }
+
     if (realtime != null) {
       return realtime;
     }
-    return fallback.fetch(request);
+    Error.throwWithStackTrace(firstError!, firstStackTrace!);
   }
+
+  bool _hasUsableForecast(WeatherSnapshot snapshot) =>
+      snapshot.forecastAvailable && snapshot.days.isNotEmpty;
 
   WeatherSnapshot _mergeRealtimeWithForecast(
     WeatherSnapshot realtime,

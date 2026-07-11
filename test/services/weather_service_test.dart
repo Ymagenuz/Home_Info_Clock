@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:home_info_clock/models/app_config.dart';
 import 'package:home_info_clock/models/weather.dart';
 import 'package:home_info_clock/services/http_json_client.dart';
+import 'package:home_info_clock/services/uapi_weather_source.dart';
 import 'package:home_info_clock/services/weather_service.dart';
 import 'package:home_info_clock/services/weather_source.dart';
 import 'package:http/http.dart' as http;
@@ -13,15 +15,15 @@ class FakeWeatherSource implements WeatherSource {
 
   final String name;
   final Object result;
-  bool called = false;
+  int callCount = 0;
 
   @override
   Future<WeatherSnapshot> fetch(WeatherRequest request) async {
-    called = true;
-    if (result is Exception) {
-      throw result as Exception;
+    callCount += 1;
+    if (result case final WeatherSnapshot snapshot) {
+      return snapshot;
     }
-    return result as WeatherSnapshot;
+    throw result;
   }
 }
 
@@ -34,6 +36,22 @@ class HttpWeatherSource implements WeatherSource {
   Future<WeatherSnapshot> fetch(WeatherRequest request) async {
     await client.getJson(Uri.parse('https://example.test/weather'));
     throw StateError('unreachable');
+  }
+}
+
+class StubJsonHttpClient extends JsonHttpClient {
+  StubJsonHttpClient(this.response);
+
+  final Map<String, dynamic> response;
+  int calls = 0;
+
+  @override
+  Future<Map<String, dynamic>> getJson(
+    Uri uri, {
+    Map<String, String> headers = const {},
+  }) async {
+    calls += 1;
+    return response;
   }
 }
 
@@ -112,7 +130,7 @@ void main() {
     final result = await service.fetchWeather(request);
 
     expect(result.sourceLabel, 'UAPI\u9884\u62a5');
-    expect(openMeteo.called, isFalse);
+    expect(openMeteo.callCount, 0);
   });
 
   test(
@@ -205,7 +223,50 @@ void main() {
       expect(result.forecastAvailable, isTrue);
       expect(result.days.map((day) => day.date), days.map((day) => day.date));
       expect(result.days[1].description, days[1].description);
-      expect(openMeteo.called, isTrue);
+      expect(openMeteo.callCount, 1);
+    },
+  );
+
+  test(
+    'WeatherService merges UAPI realtime from an empty forecast with fallback days',
+    () async {
+      final uapiClient = StubJsonHttpClient(<String, dynamic>{
+        'city': '\u4e0a\u6d77',
+        'weather': '\u5c0f\u96e8',
+        'temperature': 28,
+        'humidity': '88',
+        'wind_power': '\u5fae\u98ce',
+        'wind_direction': '\u4e1c\u98ce',
+        'report_time': '09:20',
+        'forecast': <dynamic>[],
+      });
+      final fallbackDays = forecastDays();
+      final openMeteo = FakeWeatherSource(
+        'open',
+        snapshot('Open-Meteo', days: fallbackDays),
+      );
+      final service = WeatherService(
+        primary: UapiWeatherSource(
+          client: uapiClient,
+          config: const AppConfig(),
+        ),
+        fallback: openMeteo,
+      );
+
+      final result = await service.fetchWeather(request);
+
+      expect(uapiClient.calls, 1);
+      expect(openMeteo.callCount, 1);
+      expect(result.currentTemp, 28);
+      expect(result.humidity, 88);
+      expect(result.currentDescription, '\u5c0f\u96e8');
+      expect(result.reportTimeLabel, '09:20');
+      expect(result.sourceLabel, '\u5b9e\u65f6+\u9884\u62a5');
+      expect(result.forecastAvailable, isTrue);
+      expect(
+        result.days.map((day) => day.date),
+        fallbackDays.map((day) => day.date),
+      );
     },
   );
 
@@ -241,10 +302,263 @@ void main() {
       expect(result.currentDescription, '\u5c0f\u96e8');
       expect(result.days.map((day) => day.date), days.map((day) => day.date));
       expect(result.days[1].description, days[1].description);
-      expect(openMeteo.called, isTrue);
-      expect(qweather.called, isTrue);
+      expect(openMeteo.callCount, 1);
+      expect(qweather.callCount, 1);
     },
   );
+
+  test('WeatherService calls a throwing fallback at most once', () async {
+    final primaryFailure = Exception('primary failed');
+    final primary = FakeWeatherSource('primary', primaryFailure);
+    final fallback = FakeWeatherSource(
+      'fallback',
+      Exception('fallback failed'),
+    );
+    final service = WeatherService(primary: primary, fallback: fallback);
+
+    Object? thrown;
+    try {
+      await service.fetchWeather(request);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown, same(primaryFailure));
+    expect(primary.callCount, 1);
+    expect(fallback.callCount, 1);
+  });
+
+  test(
+    'WeatherService does not recall a fallback with empty forecast days',
+    () async {
+      final primary = FakeWeatherSource('primary', Exception('primary failed'));
+      final emptyFallback = FakeWeatherSource(
+        'fallback',
+        snapshot('Empty fallback', forecast: true, dayCount: 0),
+      );
+      final service = WeatherService(primary: primary, fallback: emptyFallback);
+
+      final result = await service.fetchWeather(request);
+
+      expect(result.sourceLabel, 'Empty fallback');
+      expect(result.days, isEmpty);
+      expect(primary.callCount, 1);
+      expect(emptyFallback.callCount, 1);
+    },
+  );
+
+  test(
+    'WeatherService retains primary realtime after unusable and failed fallbacks',
+    () async {
+      final primaryRealtime = FakeWeatherSource(
+        'primary',
+        snapshot(
+          'Primary realtime',
+          forecast: false,
+          dayCount: 1,
+          currentTemp: 28,
+          currentDescription: '\u5c0f\u96e8',
+        ),
+      );
+      final emptyFallback = FakeWeatherSource(
+        'fallback',
+        snapshot('Empty fallback', forecast: true, dayCount: 0),
+      );
+      final secondary = FakeWeatherSource(
+        'secondary',
+        Exception('secondary failed'),
+      );
+      final service = WeatherService(
+        primary: primaryRealtime,
+        fallback: emptyFallback,
+        secondaryFallback: secondary,
+      );
+
+      final result = await service.fetchWeather(request);
+
+      expect(result.sourceLabel, 'Primary realtime');
+      expect(result.currentTemp, 28);
+      expect(result.currentDescription, '\u5c0f\u96e8');
+      expect(result.forecastAvailable, isFalse);
+      expect(primaryRealtime.callCount, 1);
+      expect(emptyFallback.callCount, 1);
+      expect(secondary.callCount, 1);
+    },
+  );
+
+  test(
+    'WeatherService rethrows the original primary exception after all sources fail',
+    () async {
+      final primaryFailure = Exception('original primary failure');
+      final primary = FakeWeatherSource('primary', primaryFailure);
+      final fallback = FakeWeatherSource(
+        'fallback',
+        Exception('fallback failure'),
+      );
+      final secondary = FakeWeatherSource(
+        'secondary',
+        Exception('secondary failure'),
+      );
+      final service = WeatherService(
+        primary: primary,
+        fallback: fallback,
+        secondaryFallback: secondary,
+      );
+
+      Object? thrown;
+      try {
+        await service.fetchWeather(request);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown, same(primaryFailure));
+      expect(primary.callCount, 1);
+      expect(fallback.callCount, 1);
+      expect(secondary.callCount, 1);
+    },
+  );
+
+  test(
+    'WeatherService keeps advertised-empty realtime and uses a later forecast',
+    () async {
+      final advertisedEmpty = FakeWeatherSource(
+        'primary',
+        snapshot(
+          'Advertised empty',
+          forecast: true,
+          dayCount: 0,
+          currentTemp: 28,
+          currentDescription: '\u5c0f\u96e8',
+        ),
+      );
+      final days = forecastDays();
+      final fallback = FakeWeatherSource(
+        'fallback',
+        snapshot('Fallback forecast', days: days),
+      );
+      final service = WeatherService(
+        primary: advertisedEmpty,
+        fallback: fallback,
+      );
+
+      final result = await service.fetchWeather(request);
+
+      expect(result.sourceLabel, '\u5b9e\u65f6+\u9884\u62a5');
+      expect(result.currentTemp, 28);
+      expect(result.currentDescription, '\u5c0f\u96e8');
+      expect(result.days.map((day) => day.date), days.map((day) => day.date));
+      expect(advertisedEmpty.callCount, 1);
+      expect(fallback.callCount, 1);
+    },
+  );
+
+  test(
+    'WeatherService skips unadvertised placeholder days for a later forecast',
+    () async {
+      final primaryRealtime = FakeWeatherSource(
+        'primary',
+        snapshot(
+          'Primary realtime',
+          forecast: false,
+          dayCount: 1,
+          currentTemp: 28,
+        ),
+      );
+      final placeholderFallback = FakeWeatherSource(
+        'fallback',
+        snapshot('Placeholder days', forecast: false, dayCount: 4),
+      );
+      final days = forecastDays();
+      final secondaryForecast = FakeWeatherSource(
+        'secondary',
+        snapshot('Secondary forecast', days: days),
+      );
+      final service = WeatherService(
+        primary: primaryRealtime,
+        fallback: placeholderFallback,
+        secondaryFallback: secondaryForecast,
+      );
+
+      final result = await service.fetchWeather(request);
+
+      expect(result.sourceLabel, '\u5b9e\u65f6+\u9884\u62a5');
+      expect(result.currentTemp, 28);
+      expect(result.days.map((day) => day.date), days.map((day) => day.date));
+      expect(primaryRealtime.callCount, 1);
+      expect(placeholderFallback.callCount, 1);
+      expect(secondaryForecast.callCount, 1);
+    },
+  );
+
+  test(
+    'WeatherService accepts an advertised forecast with one non-empty day',
+    () async {
+      final primary = FakeWeatherSource(
+        'primary',
+        snapshot('One-day forecast', forecast: true, dayCount: 1),
+      );
+      final fallback = FakeWeatherSource(
+        'fallback',
+        snapshot('Fallback forecast'),
+      );
+      final service = WeatherService(primary: primary, fallback: fallback);
+
+      final result = await service.fetchWeather(request);
+
+      expect(result.sourceLabel, 'One-day forecast');
+      expect(result.days, hasLength(1));
+      expect(primary.callCount, 1);
+      expect(fallback.callCount, 0);
+    },
+  );
+
+  for (final placeholder in const {
+    'Chinese': ' \u4f4d\u7f6e\uff1a (31.2\uff0c 121.5) ',
+    'English': ' LOCATION: (31.2, 121.5). ',
+  }.entries) {
+    test(
+      'WeatherService reaches coordinate fallback for ${placeholder.key} placeholder',
+      () async {
+        final uapiClient = StubJsonHttpClient(<String, dynamic>{
+          'city': '\u4e0a\u6d77',
+          'weather': '\u9634',
+          'temperature': 21,
+          'forecast': <dynamic>[
+            <String, dynamic>{
+              'date': '2026-07-07',
+              'weather_day': '\u9634',
+              'temp_max': 25,
+              'temp_min': 19,
+            },
+          ],
+        });
+        final coordinateFallback = FakeWeatherSource(
+          'fallback',
+          snapshot('Open-Meteo'),
+        );
+        final service = WeatherService(
+          primary: UapiWeatherSource(
+            client: uapiClient,
+            config: const AppConfig(),
+          ),
+          fallback: coordinateFallback,
+        );
+
+        final result = await service.fetchWeather(
+          WeatherRequest(
+            latitude: 31.2,
+            longitude: 121.5,
+            locationLabel: placeholder.value,
+          ),
+        );
+
+        expect(uapiClient.calls, 0);
+        expect(coordinateFallback.callCount, 1);
+        expect(result.sourceLabel, 'Open-Meteo');
+      },
+    );
+  }
 
   test('WeatherService falls back after a primary HTTP timeout', () async {
     final pending = Completer<http.Response>();
@@ -260,6 +574,6 @@ void main() {
     final result = await service.fetchWeather(request);
 
     expect(result.sourceLabel, 'Open-Meteo');
-    expect(fallback.called, isTrue);
+    expect(fallback.callCount, 1);
   });
 }
