@@ -1,6 +1,6 @@
 # Home Info Clock Current Product Direction
 
-Updated: 2026-07-11
+Updated: 2026-07-12
 
 This document is the current product-requirements entry point. It supersedes
 conflicting requirements in the original Flutter rebuild design and plan,
@@ -11,7 +11,11 @@ which remain in the repository as implementation history.
 - The Flutter project is a working technical baseline: analysis and tests pass,
   a debug APK builds, and that APK has been installed and launched over ADB.
 - The small manual-location iteration described below passed user acceptance on
-  a Xiaomi Mi 10 on 2026-07-11.
+  a Xiaomi Mi 10 on 2026-07-11 and is committed as `409baba`.
+- The first UI optimization iteration relearned the central clock page and
+  simple mode from the Java reference. It was tested, built, and visually
+  checked on a calibrated MuMu emulator. The user did not give an explicit
+  final acceptance verdict before ending that iteration.
 - Overall product acceptance has not passed. Other UI and interaction areas
   still differ substantially from the intended design and require optimization.
 - Do not describe the Flutter rebuild as complete based only on green tests or
@@ -20,8 +24,8 @@ which remain in the repository as implementation history.
 ## Next Product Objective
 
 The next work session continues the user-visible UI and interaction
-optimization pass with the next concrete target chosen by the user. Before
-changing each area, compare the Flutter implementation with the preserved
+optimization pass from the completed clock/simple-mode iteration. Before
+changing each additional area, compare the Flutter implementation with the preserved
 native Java implementation under `legacy/native-android/`, especially:
 
 - `app/src/main/java/com/homepanel/clock/HomePanelView.java`
@@ -79,12 +83,39 @@ accepted manual-selection behavior is:
   reference and the user's device feedback.
 - Do not preserve a Flutter behavior merely because it is already tested when
   it conflicts with the intended interaction.
+- The clock/simple-mode iteration removes the Flutter-only
+  title, status text, and mode buttons; restores the Java clock hierarchy and
+  full-surface tap behavior; and restores the Java simple-mode composition.
+  Keep that behavior unless new visual feedback requires a revision.
+- The existing right-side Tomorrow card still clips vertically at the calibrated
+  phone-sized viewport. That known gap was deliberately left for a later area.
+
+## Primary Visual Device
+
+- Continue UI iteration on the locally installed MuMu emulator. The user has
+  granted standing permission to operate it, install APKs, click/swipe, and take
+  screenshots or screen recordings without asking each time.
+- Do not wait for, connect to, install on, or otherwise depend on the Xiaomi Mi
+  10 in the next conversation. The user does not plan to connect it.
+- MuMu instance index: `1`; ADB serial: `127.0.0.1:16416`.
+- Android SDK ADB:
+  `C:\Users\10146\AppData\Local\Android\Sdk\platform-tools\adb.exe`.
+- If the instance is not visible to ADB, run:
+  `D:\Program Files\Netease\MuMu\nx_main\mumu-cli.exe adb -v 1 -c connect`.
+- Physical emulator display: Android 12, `1080x2340`, 440 dpi, 60 Hz.
+- Current reversible override: natural `1036x2250`, which becomes a
+  `2250x1036` landscape application viewport. This exactly matches the Mi 10
+  application geometry after removing its 90-pixel left cutout offset.
+- Restore the physical emulator size only when needed with `wm size reset`;
+  otherwise keep the calibrated override for UI work.
+- Use `adb -s 127.0.0.1:16416 install -r ...`; do not uninstall or clear data.
 
 ## Working Constraints
 
 - Keep secrets out of Git. UAPI and optional GPTsAPI values continue to use
   `--dart-define` or other local configuration.
-- Ask the user before taking a screenshot from a connected device.
+- MuMu screenshots/recordings are pre-authorized. Ask before capturing any
+  future physical device; no physical device is expected in the next session.
 - Preserve UAPI primary plus Open-Meteo fallback unless the user changes that
   requirement explicitly.
 - Use a workflow proportional to the change. Do not introduce SDD, multiple
@@ -97,11 +128,11 @@ accepted manual-selection behavior is:
 
 1. Confirm the branch, HEAD, and worktree status.
 2. Read this document, `.superpowers/sdd/handoff.md`, and
-   `.superpowers/sdd/progress.md`. The accepted manual-location implementation
-   is currently an intentional uncommitted diff on top of `77150e4`; preserve
-   it rather than expecting an empty status.
-3. Inspect the relevant Java and Flutter UI side by side.
-4. Ask the user which UI or interaction area to optimize next. Do not restart
-   the already accepted manual-location work unless new feedback requires it.
-5. Rebuild, replace-install over ADB without clearing app data, and iterate from
-   the user's device feedback.
+   `.superpowers/sdd/progress.md`. Expect the branch history to include the
+   accepted manual-location and completed clock/simple-mode iterations; preserve
+   any later intentional worktree changes.
+3. Reconnect MuMu instance 1 if needed and keep its `1036x2250` size override.
+4. Inspect the relevant Java and Flutter UI side by side before each next area.
+   Do not restart the accepted manual-location work.
+5. Rebuild, replace-install on MuMu without clearing app data, take emulator
+   screenshots/recordings, and iterate from those visual results.

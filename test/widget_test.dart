@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:home_info_clock/app.dart';
 import 'package:home_info_clock/models/app_config.dart';
@@ -55,10 +56,13 @@ void main() {
     expect(appSource, contains('resolveLocation: _aiLocationService?.resolve'));
   });
 
-  testWidgets('HomeInfoClockApp renders smoke title', (tester) async {
+  testWidgets('HomeInfoClockApp renders the legacy clock surface', (
+    tester,
+  ) async {
     await tester.pumpWidget(HomeInfoClockApp.preview());
 
-    expect(find.text('Home Info Clock'), findsOneWidget);
+    expect(find.text('Home Info Clock'), findsNothing);
+    expect(find.byKey(const ValueKey('analog-clock-face')), findsOneWidget);
   });
 
   testWidgets('HomeInfoClockApp accepts live dependencies', (tester) async {

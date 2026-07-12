@@ -11,6 +11,7 @@ import 'package:home_info_clock/screens/home_clock_screen.dart';
 import 'package:home_info_clock/services/cache_service.dart';
 import 'package:home_info_clock/state/home_controller.dart';
 import 'package:home_info_clock/state/timer_controller.dart';
+import 'package:home_info_clock/widgets/clock_panel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../support/live_test_fakes.dart';
@@ -53,6 +54,47 @@ void main() {
     expect(find.byKey(const ValueKey('china-province-wheel')), findsOneWidget);
     expect(find.byKey(const ValueKey('global-location-input')), findsOneWidget);
   });
+
+  testWidgets(
+    'clock tap enters the legacy simple layout and a simple-mode tap exits',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(818, 377));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HomeClockScreen(
+            homeController: HomeController.preview(),
+            timerController: TimerController(),
+            now: () => DateTime(2026, 7, 11, 23, 45),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byType(ClockPanel));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('simple-mode-view')), findsOneWidget);
+      expect(find.byKey(const ValueKey('simple-analog-clock')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('simple-compact-battery')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('simple-digital-time')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('simple-tomorrow-summary')),
+        findsOneWidget,
+      );
+      expect(find.text('TOMORROW WEATHER'), findsOneWidget);
+      expect(find.byTooltip('Dashboard mode'), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('simple-mode-view')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('simple-mode-view')), findsNothing);
+      expect(find.byKey(const ValueKey('analog-clock-face')), findsOneWidget);
+    },
+  );
 
   testWidgets('HomeClockScreen separates right-side pages and real text', (
     tester,
@@ -106,7 +148,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Home Info Clock'), findsOneWidget);
+    expect(find.byKey(const ValueKey('analog-clock-face')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('timer-finished-overlay')).hitTestable(),
       findsOneWidget,
@@ -143,7 +185,7 @@ void main() {
         ),
       );
 
-      expect(find.text('Home Info Clock'), findsOneWidget);
+      expect(find.byKey(const ValueKey('analog-clock-face')), findsOneWidget);
       expect(
         find.byKey(const ValueKey('timer-finished-overlay')).hitTestable(),
         findsOneWidget,
@@ -152,7 +194,7 @@ void main() {
       homeController.toggleSimpleMode();
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const ValueKey('simple-clock-column')), findsOneWidget);
+      expect(find.byKey(const ValueKey('simple-analog-clock')), findsOneWidget);
       expect(
         find.byKey(const ValueKey('timer-finished-overlay')).hitTestable(),
         findsOneWidget,
@@ -232,7 +274,7 @@ void main() {
       );
 
       final simpleMode = find.semantics.byPredicate(
-        (node) => node.getSemanticsData().tooltip == 'Simple mode',
+        (node) => node.label.startsWith('切换简洁模式'),
       );
       expect(simpleMode, findsOne);
 
@@ -283,7 +325,7 @@ void main() {
       );
 
       final simpleMode = find.semantics.byPredicate(
-        (node) => node.getSemanticsData().tooltip == 'Simple mode',
+        (node) => node.label.startsWith('切换简洁模式'),
       );
       final locationEntry = find.semantics.byPredicate(
         (node) =>

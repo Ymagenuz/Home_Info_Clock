@@ -25,8 +25,9 @@ void main() {
   testWidgets('SimpleModeView uses two columns without compact overflow', (
     tester,
   ) async {
-    await tester.binding.setSurfaceSize(const Size(700, 360));
+    await tester.binding.setSurfaceSize(const Size(818, 377));
     addTearDown(() => tester.binding.setSurfaceSize(null));
+    var toggles = 0;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -34,23 +35,34 @@ void main() {
           body: SimpleModeView(
             weather: _snapshot(),
             now: DateTime(2026, 7, 9, 9, 5),
-            onToggleMode: () {},
+            onToggleMode: () => toggles += 1,
           ),
         ),
       ),
     );
 
     expect(find.text('09:05'), findsOneWidget);
-    expect(find.text('2026-07-09'), findsOneWidget);
-    expect(find.text('Tomorrow'), findsOneWidget);
-    expect(find.byKey(const ValueKey('simple-clock-column')), findsOneWidget);
+    expect(find.text('2026-07-09  THU'), findsOneWidget);
+    expect(find.text('TOMORROW WEATHER'), findsOneWidget);
+    expect(find.byKey(const ValueKey('simple-mode-view')), findsOneWidget);
+    expect(find.byKey(const ValueKey('simple-analog-clock')), findsOneWidget);
+    expect(find.byKey(const ValueKey('simple-digital-time')), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('simple-tomorrow-column')),
+      find.byKey(const ValueKey('simple-tomorrow-summary')),
       findsOneWidget,
     );
-    expect(find.text('Wear a light jacket'), findsOneWidget);
-    expect(find.text('Bring an umbrella'), findsOneWidget);
-    expect(find.text('Allow extra travel time'), findsOneWidget);
+    expect(find.text('29°'), findsOneWidget);
+    expect(find.text('24°'), findsOneWidget);
+    expect(find.text('80%'), findsOneWidget);
+    expect(find.byType(TomorrowPanel), findsNothing);
+    expect(find.text('Wear a light jacket'), findsNothing);
+    expect(find.text('Bring an umbrella'), findsNothing);
+    expect(find.text('Allow extra travel time'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('simple-mode-view')));
+    await tester.pump();
+
+    expect(toggles, 1);
     expect(tester.takeException(), isNull);
   });
 }

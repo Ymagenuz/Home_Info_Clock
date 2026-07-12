@@ -86,10 +86,21 @@ class _HomeClockScreenState extends State<HomeClockScreen> {
                     excluding: isTimerFinished,
                     child: AnimatedSwitcher(
                       duration: const Duration(milliseconds: 320),
+                      switchInCurve: const Interval(
+                        0.5,
+                        1,
+                        curve: Curves.easeOutCubic,
+                      ),
+                      switchOutCurve: const Interval(
+                        0,
+                        0.5,
+                        curve: Curves.easeInCubic,
+                      ),
                       child: widget.homeController.isSimpleMode
                           ? SimpleModeView(
                               key: const ValueKey('simple'),
                               weather: widget.homeController.weather,
+                              battery: widget.homeController.battery,
                               now: _now,
                               onToggleMode:
                                   widget.homeController.toggleSimpleMode,
