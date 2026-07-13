@@ -49,7 +49,7 @@ class WeatherStatusHeader extends StatelessWidget {
                             location,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleLarge
+                            style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(
                                   fontWeight: FontWeight.w700,
                                   color: Colors.white,

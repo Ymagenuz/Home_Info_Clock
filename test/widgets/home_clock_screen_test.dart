@@ -470,7 +470,6 @@ void main() {
         fetchWeather: fetcher.call,
         now: () => now,
       );
-      addTearDown(controller.dispose);
       await controller.initialize();
       controller.setWeather(stale);
 
@@ -515,6 +514,9 @@ void main() {
       expect(find.text('Live City'), findsOneWidget);
       expect(find.text('Fresh City'), findsNothing);
       expect(find.text('Updated 09:00'), findsOneWidget);
+
+      await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+      controller.dispose();
     },
   );
 }

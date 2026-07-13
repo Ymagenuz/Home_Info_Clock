@@ -326,6 +326,95 @@ void main() {
     },
   );
 
+  test(
+    'hourly weather polling refreshes stale weather and stops on dispose',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final preferences = await SharedPreferences.getInstance();
+      final cache = CacheService(preferences);
+      var now = DateTime(2026, 7, 8, 9);
+      const location = ManualLocation(
+        label: 'Scheduled City',
+        latitude: 31.2304,
+        longitude: 121.4737,
+      );
+      await cache.saveLocation(location);
+      await cache.saveWeather(
+        testWeatherSnapshot(locationLabel: location.label, updatedAt: now),
+      );
+      var fetchCalls = 0;
+      WeatherRequest? lastRequest;
+      final controller = HomeController(
+        cache: cache,
+        now: () => now,
+        weatherRefreshInterval: const Duration(milliseconds: 10),
+        fetchWeather: (request) async {
+          fetchCalls += 1;
+          lastRequest = request;
+          return testWeatherSnapshot(
+            locationLabel: location.label,
+            updatedAt: now,
+            sourceLabel: 'Network',
+          );
+        },
+      );
+
+      await controller.initialize();
+      expect(fetchCalls, 0);
+
+      now = now.add(const Duration(hours: 1));
+      await _waitUntil(() => fetchCalls == 1);
+      await _waitUntil(() => controller.weather?.updatedAt == now);
+
+      expect(lastRequest?.locationLabel, location.label);
+      expect(controller.weather?.updatedAt, now);
+
+      controller.dispose();
+      final callsAfterDispose = fetchCalls;
+      now = now.add(const Duration(hours: 1));
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      expect(fetchCalls, callsAfterDispose);
+    },
+  );
+
+  test('hourly weather polling reuses an in-flight refresh', () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final cache = CacheService(preferences);
+    var now = DateTime(2026, 7, 8, 9);
+    const location = ManualLocation(
+      label: 'Scheduled City',
+      latitude: 31.2304,
+      longitude: 121.4737,
+    );
+    await cache.saveLocation(location);
+    await cache.saveWeather(
+      testWeatherSnapshot(locationLabel: location.label, updatedAt: now),
+    );
+    final fetch = Completer<WeatherSnapshot>();
+    final fetcher = _CompletingWeatherFetcher(fetch.future);
+    final controller = HomeController(
+      cache: cache,
+      fetchWeather: fetcher.call,
+      now: () => now,
+      weatherRefreshInterval: const Duration(milliseconds: 5),
+    );
+
+    await controller.initialize();
+    now = now.add(const Duration(hours: 1));
+    await _waitUntil(() => fetcher.calls == 1);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(fetcher.calls, 1);
+
+    controller.dispose();
+    fetch.complete(
+      testWeatherSnapshot(locationLabel: location.label, updatedAt: now),
+    );
+    await Future<void>.delayed(Duration.zero);
+  });
+
   test('refreshWeather persists fetched weather', () async {
     SharedPreferences.setMockInitialValues({});
     final preferences = await SharedPreferences.getInstance();

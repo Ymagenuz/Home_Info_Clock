@@ -44,7 +44,6 @@ class WeatherPanel extends StatelessWidget {
           weather: weather,
           status: status,
           isRefreshing: isRefreshing,
-          onRefresh: onRefresh,
         ),
       ],
     );

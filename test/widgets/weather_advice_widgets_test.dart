@@ -22,6 +22,53 @@ void main() {
     expect(find.text('Allow extra travel time'), findsOneWidget);
   });
 
+  testWidgets('Tomorrow advice exposes one concise semantic label', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: TomorrowPanel(weather: _snapshot())),
+      ),
+    );
+
+    expect(
+      find.semantics.byPredicate(
+        (node) => node.label == '\u7a7f\u8863\uff1aWear a light jacket',
+      ),
+      findsOneWidget,
+    );
+    semantics.dispose();
+  });
+
+  testWidgets('TomorrowPanel pull gesture requests a weather refresh', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(420, 360));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    var refreshes = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TomorrowPanel(
+            weather: _snapshot(),
+            onRefresh: () async => refreshes += 1,
+          ),
+        ),
+      ),
+    );
+
+    await tester.drag(
+      find.byKey(const ValueKey('tomorrow-page-content')),
+      const Offset(0, 260),
+    );
+    await tester.pumpAndSettle();
+
+    expect(refreshes, 1);
+  });
+
   testWidgets('SimpleModeView uses two columns without compact overflow', (
     tester,
   ) async {

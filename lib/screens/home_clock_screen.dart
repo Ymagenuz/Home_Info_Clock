@@ -8,11 +8,10 @@ import '../services/china_region_repository.dart';
 import '../state/home_controller.dart';
 import '../state/timer_controller.dart';
 import '../widgets/clock_panel.dart';
+import '../widgets/dashboard_right_panel.dart';
 import '../widgets/manual_location_dialog.dart';
-import '../widgets/quick_actions_panel.dart';
 import '../widgets/simple_mode_view.dart';
 import '../widgets/timer_panel.dart';
-import '../widgets/tomorrow_panel.dart';
 import '../widgets/weather_panel.dart';
 
 class HomeClockScreen extends StatefulWidget {
@@ -310,23 +309,10 @@ class _FullDashboard extends StatelessWidget {
             const _Separator(),
             SizedBox(
               width: rightWidth,
-              child: PageView(
-                key: const ValueKey('home-right-page-view'),
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: TomorrowPanel(weather: homeController.weather),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: QuickActionsPanel(
-                      onOpenBilibili: homeController.openBilibili,
-                      onRefreshWeather: () =>
-                          homeController.refreshWeather(force: true),
-                    ),
-                  ),
-                  const Center(child: Text('\u9884\u7559\u9875')),
-                ],
+              child: DashboardRightPanel(
+                weather: homeController.weather,
+                onRefresh: () => homeController.refreshWeather(force: true),
+                onOpenBilibili: homeController.openBilibili,
               ),
             ),
           ],

@@ -26,6 +26,7 @@ class HomeController extends ChangeNotifier {
     TimerController? timerController,
     DateTime Function() now = DateTime.now,
     Duration batteryPollingInterval = const Duration(minutes: 5),
+    Duration weatherRefreshInterval = const Duration(hours: 1),
   }) : _weather = initialWeather,
        _battery = initialBattery,
        _cache = cache,
@@ -34,6 +35,7 @@ class HomeController extends ChangeNotifier {
        _timerController = timerController,
        _now = now,
        _batteryPollingInterval = batteryPollingInterval,
+       _weatherRefreshInterval = weatherRefreshInterval,
        _weatherStatus = initialWeather == null
            ? WeatherStatus.locationNeeded
            : now().difference(initialWeather.updatedAt) >
@@ -91,9 +93,11 @@ class HomeController extends ChangeNotifier {
   final TimerController? _timerController;
   final DateTime Function() _now;
   final Duration _batteryPollingInterval;
+  final Duration _weatherRefreshInterval;
   WeatherStatus _weatherStatus;
   StreamSubscription<BatteryStatus>? _batterySubscription;
   Timer? _batteryPollingTimer;
+  Timer? _weatherRefreshTimer;
   WeatherRequest? _weatherRequest;
   Future<void>? _weatherRefreshFuture;
   int _locationRevision = 0;
@@ -144,6 +148,9 @@ class HomeController extends ChangeNotifier {
     }
     if (_weatherRequest != null && _shouldRefresh(_weather)) {
       await refreshWeather(force: true);
+    }
+    if (!_isDisposed) {
+      _startWeatherRefreshTimer();
     }
   }
 
@@ -316,6 +323,17 @@ class HomeController extends ChangeNotifier {
     }
   }
 
+  void _startWeatherRefreshTimer() {
+    if (_fetchWeather == null) {
+      return;
+    }
+    _weatherRefreshTimer?.cancel();
+    _weatherRefreshTimer = Timer.periodic(
+      _weatherRefreshInterval,
+      (_) => unawaited(refreshWeather()),
+    );
+  }
+
   bool _shouldRefresh(WeatherSnapshot? snapshot) {
     if (snapshot == null) {
       return true;
@@ -331,6 +349,7 @@ class HomeController extends ChangeNotifier {
   void dispose() {
     _isDisposed = true;
     _batteryPollingTimer?.cancel();
+    _weatherRefreshTimer?.cancel();
     unawaited(_batterySubscription?.cancel());
     super.dispose();
   }
