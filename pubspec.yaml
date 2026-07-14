@@ -37,8 +37,6 @@ dependencies:
   audio_session: ^0.2.4
   just_audio: ^0.10.6
   shared_preferences: ^2.3.2
-  wakelock_plus: ^1.2.8
-  cryptography: ^2.9.0
 
 dev_dependencies:
   flutter_test:

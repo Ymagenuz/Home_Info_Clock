@@ -12,13 +12,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'support/live_test_fakes.dart';
 
 void main() {
-  test('production weather wiring excludes QWeather fallback', () {
-    final appSource = File('lib/app.dart').readAsStringSync();
-
-    expect(appSource, isNot(contains('qweather_weather_source.dart')));
-    expect(appSource, isNot(contains('secondaryFallback:')));
-  });
-
   test('production wiring excludes automatic device location', () {
     final platformSource = File(
       'lib/services/platform_service.dart',

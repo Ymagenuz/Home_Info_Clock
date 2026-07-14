@@ -285,14 +285,14 @@ void main() {
         ),
       );
       final openMeteo = FakeWeatherSource('open', StateError('open failed'));
-      final qweather = FakeWeatherSource(
-        'qweather',
+      final secondaryFallback = FakeWeatherSource(
+        'secondary',
         snapshot('\u548c\u98ce\u9884\u62a5', days: days),
       );
       final service = WeatherService(
         primary: uapi,
         fallback: openMeteo,
-        secondaryFallback: qweather,
+        secondaryFallback: secondaryFallback,
       );
 
       final result = await service.fetchWeather(request);
@@ -303,7 +303,7 @@ void main() {
       expect(result.days.map((day) => day.date), days.map((day) => day.date));
       expect(result.days[1].description, days[1].description);
       expect(openMeteo.callCount, 1);
-      expect(qweather.callCount, 1);
+      expect(secondaryFallback.callCount, 1);
     },
   );
 
