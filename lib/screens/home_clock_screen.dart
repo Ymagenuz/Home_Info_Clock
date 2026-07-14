@@ -1,9 +1,12 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/china_region.dart';
 import '../models/manual_location.dart';
+import '../painters/timer_finished_bell_painter.dart';
 import '../services/china_region_repository.dart';
 import '../state/home_controller.dart';
 import '../state/timer_controller.dart';
@@ -42,28 +45,45 @@ Future<List<ChinaRegion>> _loadChinaRegions() {
   return const ChinaRegionRepository().load();
 }
 
-class _HomeClockScreenState extends State<HomeClockScreen> {
-  late DateTime _now;
+class _HomeClockScreenState extends State<HomeClockScreen>
+    with SingleTickerProviderStateMixin {
   late final Timer _ticker;
+  late final ValueNotifier<DateTime> _secondTime;
+  late final ValueNotifier<DateTime> _frameTime;
+  late final AnimationController _frameController;
+  bool _isTimerAdjusting = false;
 
   @override
   void initState() {
     super.initState();
-    _now = widget.now();
-    widget.timerController.sync(_now);
+    final now = widget.now();
+    _secondTime = ValueNotifier<DateTime>(now);
+    _frameTime = ValueNotifier<DateTime>(now);
+    _frameController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 1),
+    )
+      ..addListener(_updateFrameTime)
+      ..repeat();
+    widget.timerController.sync(now);
     _ticker = Timer.periodic(widget.tickInterval, (_) {
       final next = widget.now();
       widget.timerController.sync(next);
-      if (mounted) {
-        setState(() => _now = next);
-      }
+      _secondTime.value = next;
     });
   }
 
   @override
   void dispose() {
     _ticker.cancel();
+    _frameController.dispose();
+    _frameTime.dispose();
+    _secondTime.dispose();
     super.dispose();
+  }
+
+  void _updateFrameTime() {
+    _frameTime.value = widget.now();
   }
 
   @override
@@ -77,10 +97,10 @@ class _HomeClockScreenState extends State<HomeClockScreen> {
         final isTimerFinished = widget.timerController.state.isFinished;
         return Scaffold(
           backgroundColor: const Color(0xFF061016),
-          body: SafeArea(
-            child: Stack(
-              children: [
-                Positioned.fill(
+          body: Stack(
+            children: [
+              Positioned.fill(
+                child: SafeArea(
                   child: ExcludeFocus(
                     excluding: isTimerFinished,
                     child: AnimatedSwitcher(
@@ -91,41 +111,57 @@ class _HomeClockScreenState extends State<HomeClockScreen> {
                         curve: Curves.easeOutCubic,
                       ),
                       switchOutCurve: const Interval(
-                        0,
                         0.5,
-                        curve: Curves.easeInCubic,
+                        1,
+                        curve: Curves.easeOutCubic,
                       ),
                       child: widget.homeController.isSimpleMode
-                          ? SimpleModeView(
+                          ? ValueListenableBuilder<DateTime>(
                               key: const ValueKey('simple'),
-                              weather: widget.homeController.weather,
-                              battery: widget.homeController.battery,
-                              now: _now,
-                              onToggleMode:
-                                  widget.homeController.toggleSimpleMode,
+                              valueListenable: _secondTime,
+                              builder: (context, now, _) => SimpleModeView(
+                                weather: widget.homeController.weather,
+                                battery: widget.homeController.battery,
+                                now: now,
+                                timerController: widget.timerController,
+                                frameTime: _frameTime,
+                                onToggleMode:
+                                    widget.homeController.toggleSimpleMode,
+                              ),
                             )
                           : _FullDashboard(
                               key: const ValueKey('full'),
                               homeController: widget.homeController,
                               timerController: widget.timerController,
-                              now: _now,
+                              secondTime: _secondTime,
+                              frameTime: _frameTime,
                               onLocationTap: _showLocationDialog,
+                              isTimerAdjusting: _isTimerAdjusting,
+                              onTimerAdjustingChanged:
+                                  _handleTimerAdjustingChanged,
                             ),
                     ),
                   ),
                 ),
-                if (isTimerFinished)
-                  Positioned.fill(
-                    child: _TimerFinishedOverlay(
-                      onDismiss: widget.timerController.dismissFinished,
-                    ),
+              ),
+              if (isTimerFinished)
+                Positioned.fill(
+                  child: _TimerFinishedOverlay(
+                    onDismiss: widget.timerController.dismissFinished,
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
         );
       },
     );
+  }
+
+  void _handleTimerAdjustingChanged(bool value) {
+    if (!mounted || _isTimerAdjusting == value) {
+      return;
+    }
+    setState(() => _isTimerAdjusting = value);
   }
 
   Future<void> _showLocationDialog() async {
@@ -162,15 +198,43 @@ class _TimerFinishedOverlay extends StatefulWidget {
   State<_TimerFinishedOverlay> createState() => _TimerFinishedOverlayState();
 }
 
-class _TimerFinishedOverlayState extends State<_TimerFinishedOverlay> {
+class _TimerFinishedOverlayState extends State<_TimerFinishedOverlay>
+    with SingleTickerProviderStateMixin {
   late final FocusNode _dismissFocusNode = FocusNode(
     debugLabel: 'Timer finished dismiss',
   );
+  late final AnimationController _motionController;
+
+  @override
+  void initState() {
+    super.initState();
+    _dismissFocusNode.addListener(_handleFocusChanged);
+    _motionController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1620),
+    )..repeat();
+  }
 
   @override
   void dispose() {
+    _motionController.dispose();
+    _dismissFocusNode.removeListener(_handleFocusChanged);
     _dismissFocusNode.dispose();
     super.dispose();
+  }
+
+  void _handleFocusChanged() {
+    if (mounted) setState(() {});
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent &&
+        (event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.space)) {
+      widget.onDismiss();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   @override
@@ -182,62 +246,107 @@ class _TimerFinishedOverlayState extends State<_TimerFinishedOverlay> {
         scopesRoute: true,
         namesRoute: true,
         liveRegion: true,
-        label: 'Timer finished',
+        label: '时间到',
         child: FocusScope(
           debugLabel: 'Timer finished overlay',
           child: Material(
             key: const ValueKey('timer-finished-overlay'),
-            color: const Color(0xE6061016),
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 320),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF17252D),
-                      border: Border.all(color: const Color(0x6693E5AB)),
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x66000000),
-                          blurRadius: 24,
-                          offset: Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
+            color: Colors.black,
+            child: Focus(
+              focusNode: _dismissFocusNode,
+              autofocus: true,
+              onKeyEvent: _handleKeyEvent,
+              child: Semantics(
+                button: true,
+                focusable: true,
+                focused: _dismissFocusNode.hasFocus,
+                label: '关闭时间到提醒',
+                onTap: widget.onDismiss,
+                excludeSemantics: true,
+                child: GestureDetector(
+                  key: const ValueKey('timer-finished-dismiss'),
+                  behavior: HitTestBehavior.opaque,
+                  excludeFromSemantics: true,
+                  onTap: widget.onDismiss,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final width = constraints.maxWidth;
+                      final height = constraints.maxHeight;
+                      final centerX = width * 0.5;
+                      final centerY = height * 0.44;
+                      return Stack(
                         children: [
-                          const Icon(
-                            Icons.timer_outlined,
-                            size: 48,
-                            color: Color(0xFF93E5AB),
+                          Positioned(
+                            left: centerX - 60,
+                            top: centerY - 102,
+                            width: 120,
+                            height: 120,
+                            child: AnimatedBuilder(
+                              animation: _motionController,
+                              builder: (context, child) {
+                                final motion =
+                                    TimerFinishedMotion.fromCycleProgress(
+                                      _motionController.value,
+                                    );
+                                return Transform(
+                                  key: const ValueKey(
+                                    'timer-finished-bell-motion',
+                                  ),
+                                  alignment: Alignment.center,
+                                  transform: Matrix4.identity()
+                                    ..rotateZ(motion.radians)
+                                    ..scaleByDouble(
+                                      motion.scale,
+                                      motion.scale,
+                                      1,
+                                      1,
+                                    ),
+                                  child: child,
+                                );
+                              },
+                              child: const CustomPaint(
+                                key: ValueKey('timer-finished-bell'),
+                                painter: TimerFinishedBellPainter(),
+                              ),
+                            ),
                           ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Timer finished',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.headlineSmall
-                                ?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w800,
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            top: centerY + 28,
+                            height: 52,
+                            child: const Center(
+                              child: Text(
+                                '时间到',
+                                style: TextStyle(
+                                  color: Color(0xFFEEFAF6),
+                                  fontSize: 44,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1,
                                 ),
+                              ),
+                            ),
                           ),
-                          const SizedBox(height: 18),
-                          FilledButton.icon(
-                            key: const ValueKey('timer-finished-dismiss'),
-                            focusNode: _dismissFocusNode,
-                            autofocus: true,
-                            onPressed: widget.onDismiss,
-                            icon: const Icon(Icons.check),
-                            label: const Text('Dismiss'),
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            top: centerY + 87,
+                            height: 18,
+                            child: const Center(
+                              child: Text(
+                                '轻触屏幕关闭',
+                                style: TextStyle(
+                                  color: Color(0xAAE0F2EB),
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w400,
+                                  height: 1,
+                                ),
+                              ),
+                            ),
                           ),
                         ],
-                      ),
-                    ),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -254,14 +363,20 @@ class _FullDashboard extends StatelessWidget {
     super.key,
     required this.homeController,
     required this.timerController,
-    required this.now,
+    required this.secondTime,
+    required this.frameTime,
     required this.onLocationTap,
+    required this.isTimerAdjusting,
+    required this.onTimerAdjustingChanged,
   });
 
   final HomeController homeController;
   final TimerController timerController;
-  final DateTime now;
+  final ValueListenable<DateTime> secondTime;
+  final ValueListenable<DateTime> frameTime;
   final VoidCallback onLocationTap;
+  final bool isTimerAdjusting;
+  final ValueChanged<bool> onTimerAdjustingChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -295,15 +410,28 @@ class _FullDashboard extends StatelessWidget {
             ),
             const _Separator(),
             Expanded(
-              child: PageView(
-                key: const ValueKey('home-center-page-view'),
-                children: [
-                  ClockPanel(
-                    now: now,
-                    onToggleMode: homeController.toggleSimpleMode,
-                  ),
-                  TimerPanel(controller: timerController, now: now),
-                ],
+              child: ValueListenableBuilder<DateTime>(
+                valueListenable: secondTime,
+                builder: (context, now, _) => PageView(
+                  key: const ValueKey('home-center-page-view'),
+                  physics: isTimerAdjusting
+                      ? const NeverScrollableScrollPhysics()
+                      : null,
+                  children: [
+                    ClockPanel(
+                      now: now,
+                      frameTime: frameTime,
+                      timerController: timerController,
+                      onToggleMode: homeController.toggleSimpleMode,
+                    ),
+                    TimerPanel(
+                      controller: timerController,
+                      now: now,
+                      frameTime: frameTime,
+                      onAdjustingChanged: onTimerAdjustingChanged,
+                    ),
+                  ],
+                ),
               ),
             ),
             const _Separator(),

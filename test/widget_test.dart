@@ -88,8 +88,17 @@ void main() {
         platform: platform,
       ),
     );
-    await tester.pumpAndSettle();
+    await _pumpUntilFound(tester, find.text('Cached City'));
 
     expect(find.text('Cached City'), findsOneWidget);
   });
+}
+
+Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {
+  for (var frame = 0; frame < 120; frame += 1) {
+    await tester.pump(const Duration(milliseconds: 16));
+    if (finder.evaluate().isNotEmpty) return;
+  }
+
+  fail('Expected widget was not found within 120 frames');
 }

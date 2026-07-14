@@ -1,14 +1,25 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../painters/analog_clock_painter.dart';
+import '../state/timer_controller.dart';
+import 'timer_countdown_animator.dart';
 
 class ClockPanel extends StatelessWidget {
-  const ClockPanel({super.key, required this.now, required this.onToggleMode});
+  const ClockPanel({
+    super.key,
+    required this.now,
+    required this.onToggleMode,
+    this.timerController,
+    this.frameTime,
+  });
 
   final DateTime now;
   final VoidCallback onToggleMode;
+  final TimerController? timerController;
+  final ValueListenable<DateTime>? frameTime;
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +49,33 @@ class ClockPanel extends StatelessWidget {
                   height: diameter,
                   child: RepaintBoundary(
                     key: const ValueKey('analog-clock-face'),
-                    child: CustomPaint(painter: AnalogClockPainter(now)),
+                    child: timerController == null
+                        ? CustomPaint(
+                            painter: AnalogClockPainter(
+                              now,
+                              frameTime: frameTime,
+                            ),
+                          )
+                        : TimerCountdownAnimator(
+                            controller: timerController!,
+                            now: now,
+                            frameTime: frameTime,
+                            builder: (context, visual) {
+                              final face = CustomPaint(
+                                painter: AnalogClockPainter(
+                                  now,
+                                  countdownVisual: visual,
+                                  frameTime: frameTime,
+                                ),
+                              );
+                              if (!visual.isRunning) return face;
+                              return Semantics(
+                                key: const ValueKey('clock-countdown-rings'),
+                                label: '倒计时进行中',
+                                child: face,
+                              );
+                            },
+                          ),
                   ),
                 ),
                 Positioned(

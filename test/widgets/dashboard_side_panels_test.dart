@@ -129,7 +129,7 @@ void main() {
 
     final pages = find.byKey(const ValueKey('weather-left-page-view'));
     await tester.drag(pages, const Offset(-260, 0));
-    await tester.pumpAndSettle();
+    await _pumpPageUntilSettled(tester, pages);
 
     final trend = find.byKey(const ValueKey('weather-trend-temperature-list'));
     expect(trend, findsOneWidget);
@@ -210,7 +210,7 @@ void main() {
 
     final pages = find.byKey(const ValueKey('home-right-page-view'));
     await tester.drag(pages, const Offset(-260, 0));
-    await tester.pumpAndSettle();
+    await _pumpPageUntilSettled(tester, pages);
 
     expect(find.text('\u5feb\u6377\u5165\u53e3'), findsOneWidget);
     expect(
@@ -240,7 +240,7 @@ void main() {
 
     final pages = find.byKey(const ValueKey('home-right-page-view'));
     await tester.drag(pages, const Offset(-260, 0));
-    await tester.pumpAndSettle();
+    await _pumpPageUntilSettled(tester, pages);
     expect(find.text('\u5feb\u6377\u5165\u53e3'), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 19));
@@ -256,4 +256,35 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+}
+
+Future<void> _pumpPageUntilSettled(
+  WidgetTester tester,
+  Finder pageView,
+) async {
+  final scrollable = find.descendant(
+    of: pageView,
+    matching: find.byWidgetPredicate(
+      (widget) =>
+          widget is Scrollable &&
+          (widget.axisDirection == AxisDirection.left ||
+              widget.axisDirection == AxisDirection.right),
+    ),
+  );
+  final position = tester.state<ScrollableState>(scrollable).position;
+  var previousPixels = position.pixels;
+  var stableFrames = 0;
+
+  for (var frame = 0; frame < 120; frame += 1) {
+    await tester.pump(const Duration(milliseconds: 16));
+    final pixels = position.pixels;
+    final isStable =
+        (pixels - previousPixels).abs() < 0.01 &&
+        !position.isScrollingNotifier.value;
+    stableFrames = isStable ? stableFrames + 1 : 0;
+    if (stableFrames >= 2) return;
+    previousPixels = pixels;
+  }
+
+  fail('PageView did not settle within 120 frames');
 }

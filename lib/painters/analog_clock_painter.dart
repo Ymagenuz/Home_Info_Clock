@@ -1,20 +1,54 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../widgets/timer_countdown_animator.dart';
+import 'timer_countdown_painter.dart';
+
 class AnalogClockPainter extends CustomPainter {
-  const AnalogClockPainter(this.time);
+  AnalogClockPainter(this.time, {this.countdownVisual, this.frameTime})
+    : super(
+        repaint: Listenable.merge([
+          countdownVisual?.repaint,
+          frameTime,
+        ]),
+      );
 
   final DateTime time;
+  final TimerCountdownVisual? countdownVisual;
+  final ValueListenable<DateTime>? frameTime;
+
+  DateTime get currentTime => frameTime?.value ?? time;
 
   @override
   void paint(Canvas canvas, Size size) {
+    final time = currentTime;
     final center = size.center(Offset.zero);
     final radius = size.shortestSide / 2;
     final paint = Paint()..isAntiAlias = true;
 
     _drawMarks(canvas, center, radius, paint);
-    _drawNumbers(canvas, center, radius);
+    final visual = countdownVisual;
+    final countdownOpacity = visual != null && visual.isRunning
+        ? visual.entranceOpacity.value
+        : 0.0;
+    if (visual != null && visual.isRunning) {
+      paintTimerCountdownRings(
+        canvas,
+        visual: visual,
+        center: center,
+        radius: radius,
+        onTimerPage: false,
+        opacity: countdownOpacity,
+      );
+    }
+    _drawNumbers(
+      canvas,
+      center,
+      radius,
+      (248 * (1 - countdownOpacity)).round(),
+    );
 
     final smoothSecond = time.second + time.millisecond / 1000;
     final secondAngle = smoothSecond * 6;
@@ -79,9 +113,9 @@ class AnalogClockPainter extends CustomPainter {
     }
   }
 
-  void _drawNumbers(Canvas canvas, Offset center, double radius) {
+  void _drawNumbers(Canvas canvas, Offset center, double radius, int alpha) {
     final style = TextStyle(
-      color: const Color(0xF8F8F8FA),
+      color: Color.fromARGB(alpha, 248, 248, 250),
       fontSize: radius * 0.155,
       fontWeight: FontWeight.w700,
       height: 1,
@@ -158,5 +192,7 @@ class AnalogClockPainter extends CustomPainter {
       oldDelegate.time.hour != time.hour ||
       oldDelegate.time.minute != time.minute ||
       oldDelegate.time.second != time.second ||
-      oldDelegate.time.millisecond != time.millisecond;
+      oldDelegate.time.millisecond != time.millisecond ||
+      oldDelegate.countdownVisual != countdownVisual ||
+      oldDelegate.frameTime != frameTime;
 }

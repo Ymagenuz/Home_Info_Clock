@@ -1,11 +1,14 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../models/battery_status.dart';
 import '../models/weather.dart';
 import '../painters/analog_clock_painter.dart';
 import '../painters/weather_icon_painter.dart';
+import '../state/timer_controller.dart';
+import 'timer_countdown_animator.dart';
 
 class SimpleModeView extends StatelessWidget {
   const SimpleModeView({
@@ -14,12 +17,16 @@ class SimpleModeView extends StatelessWidget {
     required this.now,
     required this.onToggleMode,
     this.battery = const BatteryStatus.unavailable(),
+    this.timerController,
+    this.frameTime,
   });
 
   final WeatherSnapshot? weather;
   final DateTime now;
   final VoidCallback onToggleMode;
   final BatteryStatus battery;
+  final TimerController? timerController;
+  final ValueListenable<DateTime>? frameTime;
 
   @override
   Widget build(BuildContext context) {
@@ -46,7 +53,12 @@ class SimpleModeView extends StatelessWidget {
                   children: [
                     SizedBox(
                       width: leftWidth,
-                      child: _SimpleAnalogClock(now: now, battery: battery),
+                      child: _SimpleAnalogClock(
+                        now: now,
+                        battery: battery,
+                        timerController: timerController,
+                        frameTime: frameTime,
+                      ),
                     ),
                     const SizedBox(width: gap),
                     SizedBox(
@@ -65,10 +77,17 @@ class SimpleModeView extends StatelessWidget {
 }
 
 class _SimpleAnalogClock extends StatelessWidget {
-  const _SimpleAnalogClock({required this.now, required this.battery});
+  const _SimpleAnalogClock({
+    required this.now,
+    required this.battery,
+    this.timerController,
+    this.frameTime,
+  });
 
   final DateTime now;
   final BatteryStatus battery;
+  final TimerController? timerController;
+  final ValueListenable<DateTime>? frameTime;
 
   @override
   Widget build(BuildContext context) {
@@ -91,7 +110,33 @@ class _SimpleAnalogClock extends StatelessWidget {
               height: diameter,
               child: RepaintBoundary(
                 key: const ValueKey('simple-analog-clock'),
-                child: CustomPaint(painter: AnalogClockPainter(now)),
+                child: timerController == null
+                    ? CustomPaint(
+                        painter: AnalogClockPainter(
+                          now,
+                          frameTime: frameTime,
+                        ),
+                      )
+                    : TimerCountdownAnimator(
+                        controller: timerController!,
+                        now: now,
+                        frameTime: frameTime,
+                        builder: (context, visual) {
+                          final face = CustomPaint(
+                            painter: AnalogClockPainter(
+                              now,
+                              countdownVisual: visual,
+                              frameTime: frameTime,
+                            ),
+                          );
+                          if (!visual.isRunning) return face;
+                          return Semantics(
+                            key: const ValueKey('simple-countdown-rings'),
+                            label: '倒计时进行中',
+                            child: face,
+                          );
+                        },
+                      ),
               ),
             ),
             if (battery.isAvailable)
