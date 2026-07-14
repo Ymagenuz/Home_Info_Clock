@@ -9,6 +9,7 @@ import '../models/manual_location.dart';
 import '../painters/timer_finished_bell_painter.dart';
 import '../services/china_region_repository.dart';
 import '../state/home_controller.dart';
+import '../state/audio_player_controller.dart';
 import '../state/timer_controller.dart';
 import '../widgets/clock_panel.dart';
 import '../widgets/dashboard_right_panel.dart';
@@ -27,6 +28,7 @@ class HomeClockScreen extends StatefulWidget {
     this.loadChinaRegions = _loadChinaRegions,
     this.resolveChinaLocation,
     this.resolveLocation,
+    this.audioController,
   });
 
   final HomeController homeController;
@@ -36,6 +38,7 @@ class HomeClockScreen extends StatefulWidget {
   final ChinaRegionLoader loadChinaRegions;
   final ManualLocationResolver? resolveChinaLocation;
   final ManualLocationResolver? resolveLocation;
+  final AudioPlayerController? audioController;
 
   @override
   State<HomeClockScreen> createState() => _HomeClockScreenState();
@@ -59,12 +62,10 @@ class _HomeClockScreenState extends State<HomeClockScreen>
     final now = widget.now();
     _secondTime = ValueNotifier<DateTime>(now);
     _frameTime = ValueNotifier<DateTime>(now);
-    _frameController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 1),
-    )
-      ..addListener(_updateFrameTime)
-      ..repeat();
+    _frameController =
+        AnimationController(vsync: this, duration: const Duration(seconds: 1))
+          ..addListener(_updateFrameTime)
+          ..repeat();
     widget.timerController.sync(now);
     _ticker = Timer.periodic(widget.tickInterval, (_) {
       final next = widget.now();
@@ -139,6 +140,7 @@ class _HomeClockScreenState extends State<HomeClockScreen>
                               isTimerAdjusting: _isTimerAdjusting,
                               onTimerAdjustingChanged:
                                   _handleTimerAdjustingChanged,
+                              audioController: widget.audioController,
                             ),
                     ),
                   ),
@@ -368,6 +370,7 @@ class _FullDashboard extends StatelessWidget {
     required this.onLocationTap,
     required this.isTimerAdjusting,
     required this.onTimerAdjustingChanged,
+    this.audioController,
   });
 
   final HomeController homeController;
@@ -377,6 +380,7 @@ class _FullDashboard extends StatelessWidget {
   final VoidCallback onLocationTap;
   final bool isTimerAdjusting;
   final ValueChanged<bool> onTimerAdjustingChanged;
+  final AudioPlayerController? audioController;
 
   @override
   Widget build(BuildContext context) {
@@ -441,6 +445,7 @@ class _FullDashboard extends StatelessWidget {
                 weather: homeController.weather,
                 onRefresh: () => homeController.refreshWeather(force: true),
                 onOpenBilibili: homeController.openBilibili,
+                audioController: audioController,
               ),
             ),
           ],

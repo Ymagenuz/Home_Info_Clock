@@ -270,7 +270,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('right pages return to tomorrow after twenty seconds', (
+  testWidgets('right pages remain selected beyond twenty seconds', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(818, 377));
@@ -296,19 +296,16 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('\u660e\u65e5\u5929\u6c14'), findsOneWidget);
+    expect(find.text('\u5feb\u6377\u5165\u53e3'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('dashboard-right-page-dot-0-active')),
+      find.byKey(const ValueKey('dashboard-right-page-dot-1-active')),
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
   });
 }
 
-Future<void> _pumpPageUntilSettled(
-  WidgetTester tester,
-  Finder pageView,
-) async {
+Future<void> _pumpPageUntilSettled(WidgetTester tester, Finder pageView) async {
   final scrollable = find.descendant(
     of: pageView,
     matching: find.byWidgetPredicate(

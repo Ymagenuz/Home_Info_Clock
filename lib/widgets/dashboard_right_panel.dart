@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/weather.dart';
+import '../state/audio_player_controller.dart';
+import 'audio_player_page.dart';
 import 'quick_actions_panel.dart';
 import 'tomorrow_panel.dart';
 
@@ -12,11 +14,13 @@ class DashboardRightPanel extends StatefulWidget {
     required this.weather,
     required this.onRefresh,
     required this.onOpenBilibili,
+    this.audioController,
   });
 
   final WeatherSnapshot? weather;
   final Future<void> Function() onRefresh;
   final Future<void> Function() onOpenBilibili;
+  final AudioPlayerController? audioController;
 
   @override
   State<DashboardRightPanel> createState() => _DashboardRightPanelState();
@@ -26,33 +30,26 @@ class _DashboardRightPanelState extends State<DashboardRightPanel> {
   static const _titles = <String>[
     '\u660e\u65e5\u5929\u6c14',
     '\u5feb\u6377\u5165\u53e3',
-    '\u9884\u7559\u9875',
+    '\u97f3\u9891\u64ad\u653e\u5668',
   ];
 
   late final PageController _pageController = PageController();
-  Timer? _resetTimer;
   var _page = 0;
 
   @override
   void dispose() {
-    _resetTimer?.cancel();
     _pageController.dispose();
     super.dispose();
   }
 
   void _handlePageChanged(int page) {
     setState(() => _page = page);
-    _resetTimer?.cancel();
-    if (page == 0) return;
-
-    _resetTimer = Timer(const Duration(seconds: 20), () {
-      if (!mounted || !_pageController.hasClients) return;
-      _pageController.animateToPage(
-        0,
-        duration: const Duration(milliseconds: 260),
-        curve: Curves.easeOutCubic,
-      );
-    });
+    if (page == 2) {
+      final audioController = widget.audioController;
+      if (audioController != null) {
+        unawaited(audioController.refreshLibrary());
+      }
+    }
   }
 
   @override
@@ -96,7 +93,10 @@ class _DashboardRightPanelState extends State<DashboardRightPanel> {
                 padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
                 child: QuickActionsPanel(onOpenBilibili: widget.onOpenBilibili),
               ),
-              const _ReservedPage(),
+              if (widget.audioController case final audioController?)
+                AudioPlayerPage(controller: audioController)
+              else
+                const _AudioUnavailablePage(),
             ],
           ),
         ),
@@ -105,34 +105,15 @@ class _DashboardRightPanelState extends State<DashboardRightPanel> {
   }
 }
 
-class _ReservedPage extends StatelessWidget {
-  const _ReservedPage();
+class _AudioUnavailablePage extends StatelessWidget {
+  const _AudioUnavailablePage();
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '\u7b2c 3 \u9875',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '\u540e\u7eed\u53ef\u653e\u65e5\u7a0b\u3001\u5feb\u6377 App \u6216\u5bb6\u5ead\u4fe1\u606f',
-              textAlign: TextAlign.center,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: const Color(0xAFE0F2EB)),
-            ),
-          ],
-        ),
+    return const Center(
+      child: Text(
+        '\u97f3\u9891\u64ad\u653e\u5668\u672a\u8fde\u63a5',
+        style: TextStyle(color: Color(0xAFE0F2EB), fontSize: 12),
       ),
     );
   }

@@ -181,7 +181,11 @@ void main() {
     await tester.drag(rightPageView, const Offset(-420, 0));
     await _pumpPageUntilSettled(tester, rightPageView);
 
-    expect(find.text('\u9884\u7559\u9875'), findsOneWidget);
+    expect(find.text('\u97f3\u9891\u64ad\u653e\u5668'), findsOneWidget);
+    expect(
+      find.text('\u97f3\u9891\u64ad\u653e\u5668\u672a\u8fde\u63a5'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('full dashboard fits clock and timer pages at 700x360', (
@@ -874,17 +878,14 @@ void main() {
       of: find.byKey(const ValueKey('simple-analog-clock')),
       matching: find.byType(CustomPaint),
     );
-    final painter = tester.widget<CustomPaint>(customPaint).painter!
-        as AnalogClockPainter;
+    final painter =
+        tester.widget<CustomPaint>(customPaint).painter! as AnalogClockPainter;
     expect(painter.currentTime, now);
 
     now = now.add(const Duration(milliseconds: 16));
     await tester.pump(const Duration(milliseconds: 16));
 
-    expect(
-      tester.widget<CustomPaint>(customPaint).painter,
-      same(painter),
-    );
+    expect(tester.widget<CustomPaint>(customPaint).painter, same(painter));
     expect(painter.currentTime, now);
 
     await tester.pumpWidget(const MaterialApp(home: SizedBox()));
@@ -1056,10 +1057,7 @@ Future<void> _pumpPastHomeAnimations(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 400));
 }
 
-Future<void> _pumpPageUntilSettled(
-  WidgetTester tester,
-  Finder pageView,
-) async {
+Future<void> _pumpPageUntilSettled(WidgetTester tester, Finder pageView) async {
   final scrollable = find.descendant(
     of: pageView,
     matching: find.byWidgetPredicate(
@@ -1076,7 +1074,8 @@ Future<void> _pumpPageUntilSettled(
   for (var frame = 0; frame < 120; frame += 1) {
     await tester.pump(const Duration(milliseconds: 16));
     final pixels = position.pixels;
-    final isStable = (pixels - previousPixels).abs() < 0.01 &&
+    final isStable =
+        (pixels - previousPixels).abs() < 0.01 &&
         !position.isScrollingNotifier.value;
     stableFrames = isStable ? stableFrames + 1 : 0;
     if (stableFrames >= 2) return;

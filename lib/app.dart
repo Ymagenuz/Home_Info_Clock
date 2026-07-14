@@ -13,6 +13,7 @@ import 'services/open_meteo_weather_source.dart';
 import 'services/platform_service.dart';
 import 'services/uapi_weather_source.dart';
 import 'services/weather_service.dart';
+import 'state/audio_player_controller.dart';
 import 'state/home_controller.dart';
 import 'state/timer_controller.dart';
 
@@ -23,9 +24,10 @@ class HomeInfoClockApp extends StatefulWidget {
     required this.cache,
     required this.httpClient,
     required this.platform,
+    this.audioController,
   }) : preview = false;
 
-  const HomeInfoClockApp.preview({super.key})
+  const HomeInfoClockApp.preview({super.key, this.audioController})
     : config = null,
       cache = null,
       httpClient = null,
@@ -36,6 +38,7 @@ class HomeInfoClockApp extends StatefulWidget {
   final CacheService? cache;
   final JsonHttpClient? httpClient;
   final PlatformGateway? platform;
+  final AudioPlayerController? audioController;
   final bool preview;
 
   @override
@@ -98,6 +101,7 @@ class _HomeInfoClockAppState extends State<HomeInfoClockApp> {
         timerController: _timerController,
         resolveChinaLocation: _chinaLocationService?.resolve,
         resolveLocation: _aiLocationService?.resolve,
+        audioController: widget.audioController,
       ),
     );
   }
