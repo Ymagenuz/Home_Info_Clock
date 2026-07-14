@@ -9,6 +9,81 @@ import 'package:home_info_clock/state/audio_player_controller.dart';
 import 'package:home_info_clock/widgets/dashboard_right_panel.dart';
 
 void main() {
+  testWidgets('audio refresh waits for the right page scroll to settle', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(420, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final library = _DashboardAudioLibrary();
+    final engine = _DashboardAudioEngine();
+    final controller = AudioPlayerController(library: library, engine: engine);
+    addTearDown(controller.dispose);
+    addTearDown(engine.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DashboardRightPanel(
+            weather: null,
+            onRefresh: () async {},
+            audioController: controller,
+          ),
+        ),
+      ),
+    );
+
+    final pages = find.byKey(const ValueKey('home-right-page-view'));
+    final gesture = await tester.startGesture(tester.getCenter(pages));
+    await gesture.moveBy(const Offset(-20, 0));
+    await tester.pump();
+    await gesture.moveBy(const Offset(-280, 0));
+    await tester.pump();
+
+    expect(library.scanCalls, 0);
+
+    await gesture.up();
+    await _pumpPageUntilSettled(tester, pages);
+
+    expect(library.scanCalls, 1);
+  });
+
+  testWidgets('idle audio page has a stable loading surface during entry', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(420, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final library = _DashboardAudioLibrary();
+    final engine = _DashboardAudioEngine();
+    final controller = AudioPlayerController(library: library, engine: engine);
+    addTearDown(controller.dispose);
+    addTearDown(engine.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DashboardRightPanel(
+            weather: null,
+            onRefresh: () async {},
+            audioController: controller,
+          ),
+        ),
+      ),
+    );
+
+    final pages = find.byKey(const ValueKey('home-right-page-view'));
+    final gesture = await tester.startGesture(tester.getCenter(pages));
+    await gesture.moveBy(const Offset(-20, 0));
+    await tester.pump();
+    await gesture.moveBy(const Offset(-100, 0));
+    await tester.pump();
+
+    expect(library.scanCalls, 0);
+    expect(find.byKey(const ValueKey('audio-loading-state')), findsOneWidget);
+
+    await gesture.up();
+    await _pumpPageUntilSettled(tester, pages);
+  });
+
   testWidgets('second right page is the audio player and scans on entry', (
     tester,
   ) async {

@@ -70,8 +70,13 @@ class AudioPlayerController extends ChangeNotifier {
     final previousPosition = _playback.position;
     final wasPlaying = _playback.playing;
     _errorMessage = null;
-    _libraryStatus = AudioLibraryStatus.loading;
-    notifyListeners();
+    final hasStableContent =
+        _libraryStatus == AudioLibraryStatus.ready ||
+        _libraryStatus == AudioLibraryStatus.empty;
+    if (!hasStableContent) {
+      _libraryStatus = AudioLibraryStatus.loading;
+      notifyListeners();
+    }
 
     final access = await library.requestAccess();
     if (_disposed) return;

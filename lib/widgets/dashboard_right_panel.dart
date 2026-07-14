@@ -31,6 +31,7 @@ class _DashboardRightPanelState extends State<DashboardRightPanel> {
 
   late final PageController _pageController = PageController();
   var _page = 0;
+  var _refreshAudioWhenSettled = false;
 
   @override
   void dispose() {
@@ -40,12 +41,22 @@ class _DashboardRightPanelState extends State<DashboardRightPanel> {
 
   void _handlePageChanged(int page) {
     setState(() => _page = page);
-    if (page == 1) {
-      final audioController = widget.audioController;
-      if (audioController != null) {
-        unawaited(audioController.refreshLibrary());
-      }
+    _refreshAudioWhenSettled = page == 1;
+  }
+
+  bool _handleScrollEnd(ScrollEndNotification notification) {
+    if (notification.depth != 0 ||
+        notification.metrics.axis != Axis.horizontal ||
+        !_refreshAudioWhenSettled) {
+      return false;
     }
+
+    _refreshAudioWhenSettled = false;
+    final audioController = widget.audioController;
+    if (audioController != null) {
+      unawaited(audioController.refreshLibrary());
+    }
+    return false;
   }
 
   @override
@@ -75,20 +86,23 @@ class _DashboardRightPanelState extends State<DashboardRightPanel> {
           ),
         ),
         Expanded(
-          child: PageView(
-            key: const ValueKey('home-right-page-view'),
-            controller: _pageController,
-            onPageChanged: _handlePageChanged,
-            children: [
-              TomorrowPanel(
-                weather: widget.weather,
-                onRefresh: widget.onRefresh,
-              ),
-              if (widget.audioController case final audioController?)
-                AudioPlayerPage(controller: audioController)
-              else
-                const _AudioUnavailablePage(),
-            ],
+          child: NotificationListener<ScrollEndNotification>(
+            onNotification: _handleScrollEnd,
+            child: PageView(
+              key: const ValueKey('home-right-page-view'),
+              controller: _pageController,
+              onPageChanged: _handlePageChanged,
+              children: [
+                TomorrowPanel(
+                  weather: widget.weather,
+                  onRefresh: widget.onRefresh,
+                ),
+                if (widget.audioController case final audioController?)
+                  AudioPlayerPage(controller: audioController)
+                else
+                  const _AudioUnavailablePage(),
+              ],
+            ),
           ),
         ),
       ],

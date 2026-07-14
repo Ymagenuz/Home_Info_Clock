@@ -92,6 +92,30 @@ void main() {
     expect(engine.loadedQueues, hasLength(1));
   });
 
+  test('rescan keeps ready content visible while scanning', () async {
+    final library = _FakeAudioLibrary(tracks: <AudioTrack>[_track('A.mp3')]);
+    final engine = _FakeAudioPlaybackEngine();
+    final controller = AudioPlayerController(library: library, engine: engine);
+    addTearDown(controller.dispose);
+    addTearDown(engine.dispose);
+
+    await controller.refreshLibrary();
+    final rescan = Completer<List<AudioTrack>>();
+    library.scanCompleter = rescan;
+
+    final refresh = controller.refreshLibrary();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(library.scanCalls, 2);
+    expect(controller.libraryStatus, AudioLibraryStatus.ready);
+    expect(controller.tracks.single.displayName, 'A.mp3');
+
+    rescan.complete(<AudioTrack>[_track('A.mp3')]);
+    await refresh;
+
+    expect(controller.libraryStatus, AudioLibraryStatus.ready);
+  });
+
   test(
     'metadata changes refresh a queue even when its URI is unchanged',
     () async {
@@ -362,6 +386,7 @@ class _FakeAudioLibrary implements AudioLibraryGateway {
   int openFolderCalls = 0;
   Object? scanError;
   final Completer<AudioLibraryAccess>? accessCompleter;
+  Completer<List<AudioTrack>>? scanCompleter;
 
   @override
   Future<AudioLibraryAccess> requestAccess() async {
@@ -373,7 +398,7 @@ class _FakeAudioLibrary implements AudioLibraryGateway {
   Future<List<AudioTrack>> scanTracks() async {
     scanCalls += 1;
     if (scanError case final error?) throw error;
-    return tracks;
+    return scanCompleter?.future ?? tracks;
   }
 
   @override

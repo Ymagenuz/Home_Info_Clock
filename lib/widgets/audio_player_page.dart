@@ -28,10 +28,11 @@ class AudioPlayerPage extends StatelessWidget {
         if (controller.libraryStatus == AudioLibraryStatus.error) {
           return _AudioErrorState(controller: controller);
         }
-        if (controller.libraryStatus == AudioLibraryStatus.loading) {
+        if (controller.libraryStatus == AudioLibraryStatus.loading ||
+            controller.libraryStatus == AudioLibraryStatus.idle) {
           return const _AudioLoadingState();
         }
-        return const SizedBox.expand();
+        return const SizedBox.shrink();
       },
     );
   }
