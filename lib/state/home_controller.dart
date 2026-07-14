@@ -229,10 +229,6 @@ class HomeController extends ChangeNotifier {
     }
   }
 
-  Future<void> openBilibili() async {
-    await _platform?.openBilibili();
-  }
-
   Future<void> selectLocation(ManualLocation location) async {
     if (_isDisposed) {
       return;

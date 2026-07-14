@@ -41,6 +41,7 @@ void main() {
       'web',
       'lib/services/qweather_weather_source.dart',
       'lib/widgets/metric_cell.dart',
+      'lib/widgets/quick_actions_panel.dart',
       'test/services/qweather_weather_source_test.dart',
     ];
 

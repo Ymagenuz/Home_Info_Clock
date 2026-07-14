@@ -444,7 +444,6 @@ class _FullDashboard extends StatelessWidget {
               child: DashboardRightPanel(
                 weather: homeController.weather,
                 onRefresh: () => homeController.refreshWeather(force: true),
-                onOpenBilibili: homeController.openBilibili,
                 audioController: audioController,
               ),
             ),

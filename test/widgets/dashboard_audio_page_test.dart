@@ -9,7 +9,7 @@ import 'package:home_info_clock/state/audio_player_controller.dart';
 import 'package:home_info_clock/widgets/dashboard_right_panel.dart';
 
 void main() {
-  testWidgets('third right page is the audio player and scans on entry', (
+  testWidgets('second right page is the audio player and scans on entry', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(420, 700));
@@ -26,7 +26,6 @@ void main() {
           body: DashboardRightPanel(
             weather: null,
             onRefresh: () async {},
-            onOpenBilibili: () async {},
             audioController: controller,
           ),
         ),
@@ -34,8 +33,6 @@ void main() {
     );
 
     final pages = find.byKey(const ValueKey('home-right-page-view'));
-    await tester.drag(pages, const Offset(-300, 0));
-    await _pumpPageUntilSettled(tester, pages);
     await tester.drag(pages, const Offset(-300, 0));
     await _pumpPageUntilSettled(tester, pages);
 
@@ -61,20 +58,12 @@ void main() {
           body: DashboardRightPanel(
             weather: null,
             onRefresh: () async {},
-            onOpenBilibili: () async {},
             audioController: controller,
           ),
         ),
       ),
     );
     final pages = find.byKey(const ValueKey('home-right-page-view'));
-    await tester.drag(pages, const Offset(-300, 0));
-    await _pumpPageUntilSettled(tester, pages);
-    expect(find.text('\u5feb\u6377\u5165\u53e3'), findsOneWidget);
-    await tester.pump(const Duration(seconds: 21));
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('\u5feb\u6377\u5165\u53e3'), findsOneWidget);
-
     await tester.drag(pages, const Offset(-300, 0));
     await _pumpPageUntilSettled(tester, pages);
     expect(find.text('\u97f3\u9891\u64ad\u653e\u5668'), findsOneWidget);

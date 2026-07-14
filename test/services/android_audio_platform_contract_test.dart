@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('Android manifest declares versioned audio media permissions', () {
+  test('Android manifest declares scoped audio media permissions', () {
     final manifest = File(
       'android/app/src/main/AndroidManifest.xml',
     ).readAsStringSync();
@@ -12,6 +12,7 @@ void main() {
     expect(manifest, contains('android.permission.READ_EXTERNAL_STORAGE'));
     expect(manifest, contains('android:maxSdkVersion="32"'));
     expect(manifest, contains('android.permission.POST_NOTIFICATIONS'));
+    expect(manifest, isNot(contains('android.permission.QUERY_ALL_PACKAGES')));
   });
 
   test('Android host declares the background media service contract', () {

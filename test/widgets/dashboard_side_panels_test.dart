@@ -212,7 +212,7 @@ void main() {
       );
       expect(
         find.byKey(const ValueKey('dashboard-right-page-indicator')),
-        findsOneWidget,
+        findsNothing,
       );
       expect(find.text('\u660e\u65e5\u5929\u6c14'), findsOneWidget);
       for (final key in <String>[
@@ -240,7 +240,7 @@ void main() {
     },
   );
 
-  testWidgets('right shortcut page exposes only the Bilibili action', (
+  testWidgets('right second page is audio without shortcuts or an indicator', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(818, 377));
@@ -259,12 +259,17 @@ void main() {
     await tester.drag(pages, const Offset(-260, 0));
     await _pumpPageUntilSettled(tester, pages);
 
-    expect(find.text('\u5feb\u6377\u5165\u53e3'), findsOneWidget);
+    expect(find.text('\u97f3\u9891\u64ad\u653e\u5668'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('dashboard-right-page-dot-1-active')),
+      find.text('\u97f3\u9891\u64ad\u653e\u5668\u672a\u8fde\u63a5'),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey('bilibili-open-button')), findsOneWidget);
+    expect(find.text('\u5feb\u6377\u5165\u53e3'), findsNothing);
+    expect(find.byKey(const ValueKey('bilibili-open-button')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('dashboard-right-page-indicator')),
+      findsNothing,
+    );
     expect(find.byTooltip('Refresh'), findsNothing);
     expect(find.byTooltip('Settings'), findsNothing);
     expect(tester.takeException(), isNull);
@@ -288,18 +293,18 @@ void main() {
     final pages = find.byKey(const ValueKey('home-right-page-view'));
     await tester.drag(pages, const Offset(-260, 0));
     await _pumpPageUntilSettled(tester, pages);
-    expect(find.text('\u5feb\u6377\u5165\u53e3'), findsOneWidget);
+    expect(find.text('\u97f3\u9891\u64ad\u653e\u5668'), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 19));
-    expect(find.text('\u5feb\u6377\u5165\u53e3'), findsOneWidget);
+    expect(find.text('\u97f3\u9891\u64ad\u653e\u5668'), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('\u5feb\u6377\u5165\u53e3'), findsOneWidget);
+    expect(find.text('\u97f3\u9891\u64ad\u653e\u5668'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('dashboard-right-page-dot-1-active')),
-      findsOneWidget,
+      find.byKey(const ValueKey('dashboard-right-page-indicator')),
+      findsNothing,
     );
     expect(tester.takeException(), isNull);
   });

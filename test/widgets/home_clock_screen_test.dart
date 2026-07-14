@@ -176,11 +176,7 @@ void main() {
     await tester.drag(rightPageView, const Offset(-420, 0));
     await _pumpPageUntilSettled(tester, rightPageView);
 
-    expect(find.text('Bilibili'), findsOneWidget);
-
-    await tester.drag(rightPageView, const Offset(-420, 0));
-    await _pumpPageUntilSettled(tester, rightPageView);
-
+    expect(find.text('Bilibili'), findsNothing);
     expect(find.text('\u97f3\u9891\u64ad\u653e\u5668'), findsOneWidget);
     expect(
       find.text('\u97f3\u9891\u64ad\u653e\u5668\u672a\u8fde\u63a5'),

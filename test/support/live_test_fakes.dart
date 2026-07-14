@@ -64,18 +64,11 @@ class FakePlatformGateway implements PlatformGateway {
   final StreamController<BatteryStatus> batteryUpdates =
       StreamController<BatteryStatus>.broadcast();
 
-  int openBilibiliCalls = 0;
   int batteryReads = 0;
   int batteryWatches = 0;
 
   @override
   Future<void> enterKioskMode() async {}
-
-  @override
-  Future<bool> openBilibili() async {
-    openBilibiliCalls += 1;
-    return true;
-  }
 
   @override
   Future<BatteryStatus> readBatteryStatus() {

@@ -9,7 +9,6 @@ import '../models/battery_status.dart';
 
 abstract interface class PlatformGateway {
   Future<void> enterKioskMode();
-  Future<bool> openBilibili();
   Future<BatteryStatus> readBatteryStatus();
   Stream<BatteryStatus> watchBatteryStatus();
 }
@@ -29,11 +28,6 @@ class PlatformService implements PlatformGateway {
       DeviceOrientation.landscapeRight,
     ]);
     await _channel.invokeMethod<void>('enterKioskMode');
-  }
-
-  @override
-  Future<bool> openBilibili() async {
-    return await _channel.invokeMethod<bool>('openBilibili') ?? false;
   }
 
   @override

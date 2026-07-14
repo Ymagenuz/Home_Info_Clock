@@ -653,16 +653,6 @@ void main() {
     expect(controller.battery.level, 10);
     expect(notifications, 0);
   });
-
-  test('openBilibili delegates to platform service', () async {
-    final platform = FakePlatformGateway();
-    addTearDown(platform.close);
-    final controller = HomeController(platform: platform);
-
-    await controller.openBilibili();
-
-    expect(platform.openBilibiliCalls, 1);
-  });
 }
 
 Future<void> _waitUntil(bool Function() condition) async {

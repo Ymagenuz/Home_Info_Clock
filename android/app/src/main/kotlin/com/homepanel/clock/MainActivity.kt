@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.ContentUris
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -40,7 +39,6 @@ class MainActivity : AudioServiceActivity() {
                     enterKioskMode()
                     result.success(null)
                 }
-                "openBilibili" -> result.success(openBilibili())
                 "requestAudioAccess" -> requestAudioAccess(result)
                 "scanAudioFolder" -> scanAudioFolderAsync(result)
                 "openAudioFolder" -> result.success(openAudioFolder())
@@ -78,24 +76,6 @@ class MainActivity : AudioServiceActivity() {
                 View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
                 View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
                 View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-    }
-
-    private fun openBilibili(): Boolean {
-        val packages = arrayOf("tv.danmaku.bili", "com.bilibili.app.in", "com.bilibili.app.blue")
-        for (packageName in packages) {
-            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-            if (launchIntent != null) {
-                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivity(launchIntent)
-                return true
-            }
-        }
-        return try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("bilibili://home")))
-            true
-        } catch (_: Exception) {
-            false
-        }
     }
 
     private fun requestAudioAccess(result: MethodChannel.Result) {
