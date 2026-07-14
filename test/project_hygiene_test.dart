@@ -9,6 +9,7 @@ void main() {
       '.git',
       '.gradle',
       '.pub-cache',
+      '.worktrees',
       'build',
     };
     final markdownPaths = <String>[];
