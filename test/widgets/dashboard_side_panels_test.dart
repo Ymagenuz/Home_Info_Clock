@@ -40,10 +40,10 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('left location label fits compact column without ellipsis', (
+  testWidgets('left location label keeps Mi 10 city and district visible', (
     tester,
   ) async {
-    const location = '\u6d59\u6c5f\u7701 \u676d\u5dde\u5e02 \u4f59\u676d\u533a';
+    const location = '\u6d59\u6c5f\u7701 \u676d\u5dde\u5e02 \u94b1\u5858\u533a';
 
     await tester.pumpWidget(
       const MaterialApp(
@@ -51,10 +51,11 @@ void main() {
           body: Align(
             alignment: Alignment.topLeft,
             child: SizedBox(
-              width: 220,
+              width: 185,
               child: WeatherStatusHeader(
                 weather: null,
                 locationLabel: location,
+                locationContentWidth: 185,
                 status: WeatherStatus.locationNeeded,
                 isRefreshing: false,
               ),
@@ -66,14 +67,60 @@ void main() {
 
     final label = find.text(location);
     final labelWidget = tester.widget<Text>(label);
+    expect(labelWidget.style?.fontSize, greaterThanOrEqualTo(14));
     expect(labelWidget.style?.fontSize, lessThanOrEqualTo(16));
+    expect(labelWidget.maxLines, inInclusiveRange(1, 2));
+    expect(labelWidget.overflow, isNot(TextOverflow.ellipsis));
 
     final inheritedStyle = DefaultTextStyle.of(
       tester.element(label),
     ).style.merge(labelWidget.style);
     final painter = TextPainter(
       text: TextSpan(text: location, style: inheritedStyle),
-      maxLines: 1,
+      maxLines: labelWidget.maxLines,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: tester.getSize(label).width);
+    expect(painter.didExceedMaxLines, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('narrow location label wraps before becoming illegible', (
+    tester,
+  ) async {
+    const location =
+        '\u6d59\u6c5f\u7701 \u676d\u5dde\u5e02 \u94b1\u5858\u533a \u6cb3\u5e84\u8857\u9053';
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 162,
+              child: WeatherStatusHeader(
+                weather: null,
+                locationLabel: location,
+                locationContentWidth: 162,
+                status: WeatherStatus.locationNeeded,
+                isRefreshing: false,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final label = find.text(location);
+    final labelWidget = tester.widget<Text>(label);
+    expect(labelWidget.style?.fontSize, 14);
+    expect(labelWidget.maxLines, 2);
+
+    final inheritedStyle = DefaultTextStyle.of(
+      tester.element(label),
+    ).style.merge(labelWidget.style);
+    final painter = TextPainter(
+      text: TextSpan(text: location, style: inheritedStyle),
+      maxLines: labelWidget.maxLines,
       textDirection: TextDirection.ltr,
     )..layout(maxWidth: tester.getSize(label).width);
     expect(painter.didExceedMaxLines, isFalse);

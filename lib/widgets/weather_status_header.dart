@@ -11,6 +11,7 @@ class WeatherStatusHeader extends StatelessWidget {
     required this.isRefreshing,
     this.title,
     this.locationLabel,
+    this.locationContentWidth,
     this.onLocationTap,
   });
 
@@ -19,6 +20,7 @@ class WeatherStatusHeader extends StatelessWidget {
   final bool isRefreshing;
   final String? title;
   final String? locationLabel;
+  final double? locationContentWidth;
   final VoidCallback? onLocationTap;
 
   @override
@@ -45,10 +47,13 @@ class WeatherStatusHeader extends StatelessWidget {
                         onTap: onLocationTap,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 3),
-                          child: Text(
-                            location,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          child: _ResponsiveLocationLabel(
+                            text: location,
+                            maxWidth: locationContentWidth == null
+                                ? null
+                                : locationContentWidth! <= 32
+                                ? 0
+                                : locationContentWidth! - 32,
                             style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(
                                   fontWeight: FontWeight.w700,
@@ -99,6 +104,105 @@ class WeatherStatusHeader extends StatelessWidget {
       WeatherStatus.ready =>
         updatedAt == null ? 'Weather ready' : 'Updated ${_formatHm(updatedAt)}',
     };
+  }
+}
+
+class _ResponsiveLocationLabel extends StatelessWidget {
+  const _ResponsiveLocationLabel({
+    required this.text,
+    required this.maxWidth,
+    required this.style,
+  });
+
+  static const double _minimumFontSize = 14;
+
+  final String text;
+  final double? maxWidth;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedStyle = DefaultTextStyle.of(context).style.merge(style);
+    final preferredFontSize = resolvedStyle.fontSize ?? 16;
+    final minimumFontSize = preferredFontSize < _minimumFontSize
+        ? preferredFontSize
+        : _minimumFontSize;
+
+    final availableWidth = maxWidth;
+    if (availableWidth == null) {
+      return Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: resolvedStyle,
+      );
+    }
+
+    final singleLineFontSize = _singleLineFontSize(
+      context: context,
+      maxWidth: availableWidth,
+      preferredFontSize: preferredFontSize,
+      minimumFontSize: minimumFontSize,
+      style: resolvedStyle,
+    );
+
+    if (singleLineFontSize != null) {
+      return Text(
+        text,
+        maxLines: 1,
+        softWrap: false,
+        overflow: TextOverflow.clip,
+        style: resolvedStyle.copyWith(fontSize: singleLineFontSize),
+      );
+    }
+
+    return Text(
+      text,
+      maxLines: 2,
+      overflow: TextOverflow.clip,
+      style: resolvedStyle.copyWith(fontSize: minimumFontSize),
+    );
+  }
+
+  double? _singleLineFontSize({
+    required BuildContext context,
+    required double maxWidth,
+    required double preferredFontSize,
+    required double minimumFontSize,
+    required TextStyle style,
+  }) {
+    if (!maxWidth.isFinite) return preferredFontSize;
+
+    bool fits(double fontSize) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: style.copyWith(fontSize: fontSize),
+        ),
+        maxLines: 1,
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+        locale: Localizations.maybeLocaleOf(context),
+      )..layout();
+      final doesFit = painter.width <= maxWidth;
+      painter.dispose();
+      return doesFit;
+    }
+
+    if (fits(preferredFontSize)) return preferredFontSize;
+    if (!fits(minimumFontSize)) return null;
+
+    var lower = minimumFontSize;
+    var upper = preferredFontSize;
+    for (var iteration = 0; iteration < 8; iteration += 1) {
+      final candidate = (lower + upper) / 2;
+      if (fits(candidate)) {
+        lower = candidate;
+      } else {
+        upper = candidate;
+      }
+    }
+    return lower;
   }
 }
 

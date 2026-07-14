@@ -50,6 +50,10 @@ class WeatherCurrentPage extends StatelessWidget {
                       WeatherStatusHeader(
                         weather: weather,
                         locationLabel: locationLabel,
+                        locationContentWidth: math.max(
+                          0.0,
+                          constraints.maxWidth - padding * 2,
+                        ),
                         status: status,
                         isRefreshing: isRefreshing,
                         onLocationTap: onLocationTap,
